@@ -1,7 +1,7 @@
 import { LitElement, css, html, TemplateResult } from "lit";
 import type { AlbumAnalysis, TrackAnalysis } from "../core/types";
+import { decodeToPCM } from "../analysis/decode";
 
-// Standard Vite worker import - works fine once CSP allows 'unsafe-eval'
 type WorkerMsg =
   | { type: "progress"; current: number; total: number; filename: string }
   | { type: "result"; album: AlbumAnalysis }
@@ -90,10 +90,12 @@ export class AlbumAnalyzerApp extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    console.log("[DEBUG] connectedCallback called, existing worker:", !!this.worker);
     if (this.worker) return;
 
     // Light DOM Input for Safari/Firefox reliability
     if (!document.getElementById('auralgeek-file-input')) {
+      console.log("[DEBUG] Creating new file input element");
       const input = document.createElement('input');
       input.id = 'auralgeek-file-input';
       input.type = 'file';
@@ -102,27 +104,33 @@ export class AlbumAnalyzerApp extends LitElement {
       input.style.display = 'none';
       document.body.appendChild(input);
       this.lightDomInput = input;
-      
+
       input.addEventListener('change', async (e) => {
+        console.log("[DEBUG] File input change event fired");
         const target = e.target as HTMLInputElement;
         const files = target.files ? Array.from(target.files) : [];
+        console.log("[DEBUG] Files selected:", files.length, files.map(f => f.name));
         if (files.length > 0) {
           target.value = '';
           await this.runAnalysis(files);
         }
       });
+      console.log("[DEBUG] File input created and event listener attached");
     } else {
       this.lightDomInput = document.getElementById('auralgeek-file-input') as HTMLInputElement;
+      console.log("[DEBUG] Using existing file input element");
     }
 
     try {
+      console.log("[DEBUG] Creating Web Worker...");
       this.worker = new Worker(
         new URL("../workers/analyzer.worker.ts", import.meta.url),
         { type: "module" }
       );
+      console.log("[DEBUG] Worker created successfully");
 
       this.worker.onerror = (e) => {
-        console.error("Worker Load Error:", e);
+        console.error("[DEBUG] Worker Load Error:", e);
         this.error = `Worker failed to load (likely CSP blocked). Check console.`;
         this.busy = false;
         this.status = "Error.";
@@ -130,23 +138,30 @@ export class AlbumAnalyzerApp extends LitElement {
 
       this.worker.onmessage = (ev: MessageEvent<WorkerMsg>) => {
         const msg = ev.data;
+        console.log("[DEBUG] Worker message received:", msg.type);
         if (msg.type === "progress") {
           this.progress = { current: msg.current, total: msg.total, filename: msg.filename };
           this.status = `Analyzing ${msg.filename} (${msg.current}/${msg.total})`;
+          this.requestUpdate();
         } else if (msg.type === "result") {
+          console.log("[DEBUG] Analysis complete, tracks:", msg.album.tracks.length);
           this.album = msg.album;
           this.busy = false;
           this.progress = null;
           this.status = "Analysis complete.";
           this.expandedTracks = msg.album.tracks.length > 0 ? new Set([1]) : new Set();
+          this.requestUpdate();
         } else if (msg.type === "error") {
+          console.error("[DEBUG] Worker error:", msg.message);
           this.error = msg.message;
           this.busy = false;
           this.progress = null;
           this.status = "Error.";
+          this.requestUpdate();
         }
       };
     } catch (e) {
+      console.error("[DEBUG] Failed to create worker:", e);
       this.error = `Failed to create worker: ${e}`;
       this.status = "Error.";
     }
@@ -165,11 +180,14 @@ export class AlbumAnalyzerApp extends LitElement {
   }
 
   private onPickFiles() {
+    console.log("[DEBUG] onPickFiles called, busy:", this.busy);
     if (this.busy) return;
     if (this.lightDomInput) {
+      console.log("[DEBUG] Clicking lightDomInput");
       this.lightDomInput.click();
     } else {
       const input = document.getElementById('auralgeek-file-input');
+      console.log("[DEBUG] Fallback input element:", input);
       if (input) (input as HTMLElement).click();
     }
   }
@@ -184,6 +202,7 @@ export class AlbumAnalyzerApp extends LitElement {
   }
 
   private async runAnalysis(files: File[]) {
+    console.log("[DEBUG] runAnalysis called with", files.length, "files");
     this.error = null;
     this.album = null;
     this.expandedTracks = new Set();
@@ -191,15 +210,20 @@ export class AlbumAnalyzerApp extends LitElement {
     const audio = files.filter((f) => {
       const extMatch = /\.(wav|flac|aiff|aif|mp3|m4a|aac|ogg)$/i.test(f.name);
       const mimeMatch = f.type.startsWith("audio/");
+      console.log("[DEBUG] File filter:", f.name, "ext:", extMatch, "mime:", mimeMatch, "type:", f.type);
       return extMatch || mimeMatch;
     }).sort((a, b) => a.name.localeCompare(b.name));
 
+    console.log("[DEBUG] Audio files after filter:", audio.length);
+
     if (!audio.length) {
+      console.log("[DEBUG] No audio files found");
       this.status = "No supported audio files found.";
       return;
     }
 
     if (!this.worker) {
+      console.log("[DEBUG] Worker not initialized");
       this.status = "Worker not initialized.";
       this.error = "Internal error: analysis worker not available.";
       this.busy = false;
@@ -208,13 +232,58 @@ export class AlbumAnalyzerApp extends LitElement {
 
     const albumName = "Album";
     this.busy = true;
-    this.status = `Starting analysis (${audio.length} tracks)...`;
-    
+    console.log("[DEBUG] Starting decode phase");
+
     try {
-      this.worker.postMessage({ type: "analyze", albumName, files: audio });
+      // Decode audio files in main thread (OfflineAudioContext not available in workers)
+      const decodedTracks: Array<{
+        filename: string;
+        filesize: number;
+        sampleRate: number;
+        channels: number;
+        channelData: Float32Array[];
+      }> = [];
+
+      for (let i = 0; i < audio.length; i++) {
+        const file = audio[i];
+        console.log("[DEBUG] Decoding file", i + 1, "/", audio.length, ":", file.name);
+        this.status = `Decoding ${file.name} (${i + 1}/${audio.length})...`;
+        this.progress = { current: i + 1, total: audio.length, filename: file.name };
+        this.requestUpdate();
+
+        const decoded = await decodeToPCM(file);
+        console.log("[DEBUG] Decoded:", file.name, "sr:", decoded.sampleRate, "ch:", decoded.channels, "samples:", decoded.channelData[0]?.length);
+        decodedTracks.push({
+          filename: file.name,
+          filesize: file.size,
+          sampleRate: decoded.sampleRate,
+          channels: decoded.channels,
+          channelData: decoded.channelData
+        });
+      }
+
+      console.log("[DEBUG] All files decoded, sending to worker");
+      this.status = `Analyzing ${audio.length} tracks...`;
+
+      // Transfer Float32Arrays to worker for efficiency
+      const transferables: Transferable[] = [];
+      for (const track of decodedTracks) {
+        for (const ch of track.channelData) {
+          transferables.push(ch.buffer);
+        }
+      }
+
+      console.log("[DEBUG] Posting message to worker with", decodedTracks.length, "tracks");
+      this.worker.postMessage(
+        { type: "analyze", albumName, tracks: decodedTracks },
+        transferables
+      );
+      console.log("[DEBUG] Message posted to worker");
     } catch (e) {
-      this.error = `Worker communication failed: ${e}`;
+      console.error("[DEBUG] Analysis error:", e);
+      this.error = `Analysis failed: ${e}`;
       this.busy = false;
+      this.progress = null;
       this.status = "Error.";
     }
   }

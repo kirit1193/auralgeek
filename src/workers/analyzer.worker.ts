@@ -1,16 +1,23 @@
 /// <reference lib="webworker" />
 import type { AlbumAnalysis, TrackAnalysis } from "../core/types";
-import { analyzeMediaInfo } from "../analysis/mediainfo";
-import { decodeToPCM } from "../analysis/decode";
 import { computeLoudness } from "../analysis/loudness";
 import { computeDynamics, computeStereo, computeBandEnergiesMono } from "../analysis/dsp";
 import { bytesToMB, formatDuration, clamp } from "../core/format";
 import { evaluateDistribution } from "../analysis/rules";
 
+// Pre-decoded track data from main thread
+interface DecodedTrackData {
+  filename: string;
+  filesize: number;
+  sampleRate: number;
+  channels: number;
+  channelData: Float32Array[];
+}
+
 type AnalyzeRequest = {
   type: "analyze";
   albumName: string;
-  files: File[];
+  tracks: DecodedTrackData[];
 };
 
 type ProgressMsg =
@@ -44,35 +51,37 @@ function detectAIArtifacts(track: TrackAnalysis): TrackAnalysis["aiArtifacts"] {
   };
 }
 
+console.log("[WORKER] Worker script loaded");
+
 self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
+  console.log("[WORKER] Message received:", ev.data.type);
   if (ev.data.type !== "analyze") return;
 
-  const { albumName, files } = ev.data;
+  const { albumName, tracks: decodedTracks } = ev.data;
+  console.log("[WORKER] Starting analysis of", decodedTracks.length, "tracks");
 
   try {
     const tracks: TrackAnalysis[] = [];
     let totalSeconds = 0;
     let totalSizeMB = 0;
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      (self as any).postMessage({ type: "progress", current: i + 1, total: files.length, filename: file.name } satisfies ProgressMsg);
+    for (let i = 0; i < decodedTracks.length; i++) {
+      const decoded = decodedTracks[i];
 
-      const mi = await analyzeMediaInfo(file);
-      const decoded = await decodeToPCM(file);
+      (self as any).postMessage({ type: "progress", current: i + 1, total: decodedTracks.length, filename: decoded.filename } satisfies ProgressMsg);
 
-      const durationSeconds = mi.durationSeconds ?? (decoded.channelData[0].length / decoded.sampleRate);
+      const durationSeconds = decoded.channelData[0].length / decoded.sampleRate;
 
       const params = {
-        filename: file.name,
-        filesizeMB: bytesToMB(file.size),
+        filename: decoded.filename,
+        filesizeMB: bytesToMB(decoded.filesize),
         durationSeconds,
         durationFormatted: formatDuration(durationSeconds),
-        format: mi.format,
-        sampleRate: mi.samplingRate ?? decoded.sampleRate,
-        channels: mi.channels ?? decoded.channels,
-        bitDepth: mi.bitDepth,
-        overallBitrate: mi.overallBitrate
+        format: undefined,
+        sampleRate: decoded.sampleRate,
+        channels: decoded.channels,
+        bitDepth: undefined,
+        overallBitrate: undefined
       };
 
       const n = decoded.channelData[0].length;
@@ -175,6 +184,7 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
 
     (self as any).postMessage({ type: "result", album } satisfies ProgressMsg);
   } catch (e: any) {
+    console.error("WORKER PROCESSING ERROR:", e);
     (self as any).postMessage({ type: "error", message: String(e?.message ?? e) } satisfies ProgressMsg);
   }
 };
