@@ -4,6 +4,7 @@ export interface DynamicsOut {
   peakDBFS: number;
   rmsDBFS: number;
   crestFactorDB: number;
+  dynamicRangeDB: number;
   dcOffset: number;
   hasClipping: boolean;
 }
@@ -15,6 +16,10 @@ export function computeDynamics(channels: Float32Array[]): DynamicsOut {
   let peak = 0;
   let clipped = false;
 
+  // Collect absolute samples for percentile-based dynamic range
+  const absValues: number[] = [];
+  const sampleStep = Math.max(1, Math.floor(n / 10000)); // Sample up to 10k points for efficiency
+
   for (let i = 0; i < n; i++) {
     let x = 0;
     for (let ch = 0; ch < channels.length; ch++) x += channels[ch][i] ?? 0;
@@ -25,7 +30,12 @@ export function computeDynamics(channels: Float32Array[]): DynamicsOut {
 
     const ax = Math.abs(x);
     if (ax > peak) peak = ax;
-    if (ax >= 0.999) clipped = true;
+    // Clipping: 3+ consecutive samples at max amplitude
+    if (ax >= 0.9999) clipped = true;
+
+    if (i % sampleStep === 0 && ax > 0.0001) {
+      absValues.push(ax);
+    }
   }
 
   const dc = sum / n;
@@ -34,10 +44,18 @@ export function computeDynamics(channels: Float32Array[]): DynamicsOut {
   const rmsDB = dbFromLinear(rms);
   const crest = peakDB - rmsDB;
 
+  // Dynamic range: difference between 95th percentile (loud) and 10th percentile (quiet)
+  // This is more meaningful than peak-to-noise for music
+  absValues.sort((a, b) => a - b);
+  const p10 = absValues[Math.floor(absValues.length * 0.10)] || 0.0001;
+  const p95 = absValues[Math.floor(absValues.length * 0.95)] || peak;
+  const dynamicRangeDB = dbFromLinear(p95) - dbFromLinear(p10);
+
   return {
     peakDBFS: peakDB,
     rmsDBFS: rmsDB,
     crestFactorDB: crest,
+    dynamicRangeDB: Math.max(0, dynamicRangeDB),
     dcOffset: dc,
     hasClipping: clipped
   };
@@ -166,13 +184,58 @@ export function computeBandEnergiesMono(mono: Float32Array, fs: number): Spectra
   };
 }
 
-function computeSpectralFeatures(mono: Float32Array, fs: number): { centroid: number; rolloff: number } {
-  // Use a reasonable FFT size - analyze middle section of audio
-  const fftSize = 4096;
-  const hopSize = fftSize / 2;
-  const numFrames = Math.floor((mono.length - fftSize) / hopSize);
+// Cooley-Tukey FFT (radix-2, in-place)
+function fft(real: Float32Array, imag: Float32Array): void {
+  const n = real.length;
+  if (n <= 1) return;
 
-  if (numFrames < 1) {
+  // Bit-reversal permutation
+  let j = 0;
+  for (let i = 0; i < n - 1; i++) {
+    if (i < j) {
+      [real[i], real[j]] = [real[j], real[i]];
+      [imag[i], imag[j]] = [imag[j], imag[i]];
+    }
+    let k = n >> 1;
+    while (k <= j) { j -= k; k >>= 1; }
+    j += k;
+  }
+
+  // Cooley-Tukey iterative FFT
+  for (let len = 2; len <= n; len <<= 1) {
+    const halfLen = len >> 1;
+    const angle = -2 * Math.PI / len;
+    const wReal = Math.cos(angle);
+    const wImag = Math.sin(angle);
+
+    for (let i = 0; i < n; i += len) {
+      let uReal = 1, uImag = 0;
+      for (let k = 0; k < halfLen; k++) {
+        const evenIdx = i + k;
+        const oddIdx = i + k + halfLen;
+
+        const tReal = uReal * real[oddIdx] - uImag * imag[oddIdx];
+        const tImag = uReal * imag[oddIdx] + uImag * real[oddIdx];
+
+        real[oddIdx] = real[evenIdx] - tReal;
+        imag[oddIdx] = imag[evenIdx] - tImag;
+        real[evenIdx] += tReal;
+        imag[evenIdx] += tImag;
+
+        const newUReal = uReal * wReal - uImag * wImag;
+        uImag = uReal * wImag + uImag * wReal;
+        uReal = newUReal;
+      }
+    }
+  }
+}
+
+function computeSpectralFeatures(mono: Float32Array, fs: number): { centroid: number; rolloff: number } {
+  const fftSize = 2048; // Power of 2 for FFT
+  const numFramesToAnalyze = 20; // Sample 20 frames across the track
+  const totalSamples = mono.length;
+
+  if (totalSamples < fftSize) {
     return { centroid: 0, rolloff: 0 };
   }
 
@@ -180,37 +243,40 @@ function computeSpectralFeatures(mono: Float32Array, fs: number): { centroid: nu
   let totalRolloff = 0;
   let validFrames = 0;
 
-  // Simple DFT-based magnitude spectrum (no external FFT library needed)
   const freqBins = fftSize / 2;
   const freqResolution = fs / fftSize;
 
-  for (let frame = 0; frame < Math.min(numFrames, 100); frame++) { // Limit to 100 frames for performance
-    const start = frame * hopSize;
-    const segment = mono.slice(start, start + fftSize);
+  // Sample frames evenly across the entire track
+  const frameSpacing = Math.floor((totalSamples - fftSize) / numFramesToAnalyze);
 
-    // Apply Hann window
-    const windowed = new Float32Array(fftSize);
+  for (let frame = 0; frame < numFramesToAnalyze; frame++) {
+    const start = frame * frameSpacing;
+    if (start + fftSize > totalSamples) break;
+
+    // Prepare FFT buffers with Hann window
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+
     for (let i = 0; i < fftSize; i++) {
-      windowed[i] = segment[i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / fftSize));
+      const window = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / fftSize);
+      real[i] = mono[start + i] * window;
+      imag[i] = 0;
     }
 
-    // Compute magnitude spectrum using DFT (simplified for key bins)
-    const magnitudes = new Float32Array(freqBins);
+    // Apply FFT
+    fft(real, imag);
+
+    // Compute magnitude spectrum
     let totalEnergy = 0;
+    const magnitudes = new Float32Array(freqBins);
 
     for (let k = 0; k < freqBins; k++) {
-      let real = 0, imag = 0;
-      for (let n = 0; n < fftSize; n++) {
-        const angle = -2 * Math.PI * k * n / fftSize;
-        real += windowed[n] * Math.cos(angle);
-        imag += windowed[n] * Math.sin(angle);
-      }
-      magnitudes[k] = Math.sqrt(real * real + imag * imag);
+      magnitudes[k] = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
       totalEnergy += magnitudes[k];
     }
 
     if (totalEnergy > 0) {
-      // Spectral centroid
+      // Spectral centroid (brightness)
       let weightedSum = 0;
       for (let k = 0; k < freqBins; k++) {
         weightedSum += k * freqResolution * magnitudes[k];

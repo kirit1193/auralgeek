@@ -1,6 +1,20 @@
 import { defineConfig } from 'vite';
+import wasm from 'vite-plugin-wasm';
 
 export default defineConfig({
-  // Cloudflare Pages serves from /; keep defaults.
-  // Worker imports (new URL(...)) are supported out of the box.
+  plugins: [
+    wasm()
+  ],
+  worker: {
+    format: 'es',
+    plugins: () => [
+      wasm()
+    ]
+  },
+  build: {
+    target: 'esnext'
+  },
+  optimizeDeps: {
+    exclude: ['ebur128-wasm']
+  }
 });

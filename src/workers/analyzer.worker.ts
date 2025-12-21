@@ -101,6 +101,7 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
           peakDBFS: dyn.peakDBFS,
           rmsDBFS: dyn.rmsDBFS,
           crestFactorDB: dyn.crestFactorDB,
+          dynamicRangeDB: dyn.dynamicRangeDB,
           dcOffset: dyn.dcOffset,
           hasClipping: dyn.hasClipping
         },

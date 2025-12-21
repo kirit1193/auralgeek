@@ -22,6 +22,7 @@ export interface DynamicsMetrics {
   peakDBFS: number | null;
   rmsDBFS: number | null;
   crestFactorDB: number | null;
+  dynamicRangeDB: number | null;
   dcOffset: number | null;
   hasClipping: boolean;
 }

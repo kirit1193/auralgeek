@@ -403,6 +403,20 @@ export class AlbumAnalyzerApp extends LitElement {
             <!-- Dynamics -->
             <div class="metric-section">
               <h4>Dynamics</h4>
+              ${this.renderMeter(
+                "Dynamic Range",
+                "Difference between loud and quiet sections (95th vs 10th percentile). Higher = more dynamic, lower = more compressed.",
+                t.dynamics.dynamicRangeDB,
+                "dB",
+                [
+                  { width: 20, type: "danger-low" },
+                  { width: 30, type: "warning-low" },
+                  { width: 30, type: "optimal" },
+                  { width: 20, type: "warning-high" }
+                ],
+                (v) => (v / 40) * 100,
+                ["0", "10", "20", "30", "40"]
+              )}
               <div class="metric-row">
                 <span class="metric-label" data-tooltip="Root Mean Square level - average signal energy.">RMS Level</span>
                 <span class="metric-value">${t.dynamics.rmsDBFS?.toFixed(1) ?? "—"} dBFS</span>
