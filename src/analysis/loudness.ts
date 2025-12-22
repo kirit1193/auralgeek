@@ -9,11 +9,216 @@ import { dbFromLinear } from "../core/format";
 
 export interface LoudnessResult {
   integratedLUFS: number;
+  integratedUngatedLUFS: number;
   truePeakDBTP: number;
+  samplePeakDBFS: number;
+  truePeakOversampling: number;
+  ispMarginDB: number;
+  maxMomentaryLUFS: number;
+  maxShortTermLUFS: number;
+  shortTermP10: number;
+  shortTermP50: number;
+  shortTermP90: number;
+  shortTermP95: number;
+  loudnessRangeLU: number;
+  shortTermTimeline: number[];
+  loudestSegmentTime: number;
+  quietestSegmentTime: number;
+  abruptChanges: { time: number; deltaLU: number }[];
 }
 
-// Fallback peak detection when ebur128 returns invalid values
-function findPeakLinear(channels: Float32Array[]): number {
+// ITU BS.1770 K-weighting pre-filter coefficients (48kHz)
+// Stage 1: High shelf (+4dB @ 1681Hz)
+// Stage 2: High pass (38Hz rolloff)
+function createKWeightingCoeffs(sampleRate: number): { stage1: BiquadCoeffs; stage2: BiquadCoeffs } {
+  // Pre-calculated for common sample rates, fallback to 48kHz coefficients
+  if (sampleRate === 48000) {
+    return {
+      stage1: { b0: 1.53512485958697, b1: -2.69169618940638, b2: 1.19839281085285, a1: -1.69065929318241, a2: 0.73248077421585 },
+      stage2: { b0: 1.0, b1: -2.0, b2: 1.0, a1: -1.99004745483398, a2: 0.99007225036621 }
+    };
+  } else if (sampleRate === 44100) {
+    return {
+      stage1: { b0: 1.53512485958697, b1: -2.69169618940638, b2: 1.19839281085285, a1: -1.69065929318241, a2: 0.73248077421585 },
+      stage2: { b0: 1.0, b1: -2.0, b2: 1.0, a1: -1.98912696790837, a2: 0.98913691860121 }
+    };
+  }
+  // Default to 48kHz
+  return {
+    stage1: { b0: 1.53512485958697, b1: -2.69169618940638, b2: 1.19839281085285, a1: -1.69065929318241, a2: 0.73248077421585 },
+    stage2: { b0: 1.0, b1: -2.0, b2: 1.0, a1: -1.99004745483398, a2: 0.99007225036621 }
+  };
+}
+
+interface BiquadCoeffs {
+  b0: number;
+  b1: number;
+  b2: number;
+  a1: number;
+  a2: number;
+}
+
+function applyBiquad(input: Float32Array, coeffs: BiquadCoeffs): Float32Array {
+  const output = new Float32Array(input.length);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  const { b0, b1, b2, a1, a2 } = coeffs;
+
+  for (let i = 0; i < input.length; i++) {
+    const x = input[i];
+    const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+    output[i] = y;
+    x2 = x1; x1 = x;
+    y2 = y1; y1 = y;
+  }
+  return output;
+}
+
+function applyKWeighting(channels: Float32Array[], sampleRate: number): Float32Array[] {
+  const coeffs = createKWeightingCoeffs(sampleRate);
+  return channels.map(ch => {
+    const stage1Out = applyBiquad(ch, coeffs.stage1);
+    return applyBiquad(stage1Out, coeffs.stage2);
+  });
+}
+
+// Compute loudness in LUFS from mean square values
+function msToLUFS(meanSquare: number): number {
+  if (meanSquare <= 0) return -Infinity;
+  return -0.691 + 10 * Math.log10(meanSquare);
+}
+
+// Compute momentary loudness (400ms windows) and short-term loudness (3s windows)
+function computeWindowedLoudness(
+  kWeightedChannels: Float32Array[],
+  sampleRate: number
+): {
+  momentaryValues: number[];
+  shortTermValues: number[];
+  momentaryTimes: number[];
+  shortTermTimes: number[];
+} {
+  const hopSize = Math.floor(sampleRate / 10); // 100ms hop (10Hz update rate)
+  const momentaryWindow = Math.floor(sampleRate * 0.4); // 400ms
+  const shortTermWindow = Math.floor(sampleRate * 3); // 3s
+  const numSamples = kWeightedChannels[0].length;
+
+  const momentaryValues: number[] = [];
+  const shortTermValues: number[] = [];
+  const momentaryTimes: number[] = [];
+  const shortTermTimes: number[] = [];
+
+  // Channel weights for surround (simplified for stereo: both = 1.0)
+  const channelWeights = kWeightedChannels.map(() => 1.0);
+
+  for (let pos = 0; pos < numSamples - hopSize; pos += hopSize) {
+    const time = pos / sampleRate;
+
+    // Momentary loudness (400ms)
+    if (pos + momentaryWindow <= numSamples) {
+      let sumMs = 0;
+      for (let ch = 0; ch < kWeightedChannels.length; ch++) {
+        let chSum = 0;
+        for (let i = pos; i < pos + momentaryWindow; i++) {
+          chSum += kWeightedChannels[ch][i] * kWeightedChannels[ch][i];
+        }
+        sumMs += channelWeights[ch] * (chSum / momentaryWindow);
+      }
+      momentaryValues.push(msToLUFS(sumMs));
+      momentaryTimes.push(time);
+    }
+
+    // Short-term loudness (3s)
+    if (pos + shortTermWindow <= numSamples) {
+      let sumMs = 0;
+      for (let ch = 0; ch < kWeightedChannels.length; ch++) {
+        let chSum = 0;
+        for (let i = pos; i < pos + shortTermWindow; i++) {
+          chSum += kWeightedChannels[ch][i] * kWeightedChannels[ch][i];
+        }
+        sumMs += channelWeights[ch] * (chSum / shortTermWindow);
+      }
+      shortTermValues.push(msToLUFS(sumMs));
+      shortTermTimes.push(time);
+    }
+  }
+
+  return { momentaryValues, shortTermValues, momentaryTimes, shortTermTimes };
+}
+
+// Compute integrated loudness with optional gating (ITU BS.1770-4)
+function computeIntegratedLoudness(
+  kWeightedChannels: Float32Array[],
+  sampleRate: number,
+  gated: boolean
+): number {
+  const blockSize = Math.floor(sampleRate * 0.4); // 400ms blocks
+  const hopSize = Math.floor(blockSize * 0.75); // 75% overlap
+  const numSamples = kWeightedChannels[0].length;
+  const channelWeights = kWeightedChannels.map(() => 1.0);
+
+  // Step 1: Calculate loudness of each block
+  const blockLoudness: number[] = [];
+  for (let pos = 0; pos + blockSize <= numSamples; pos += hopSize) {
+    let sumMs = 0;
+    for (let ch = 0; ch < kWeightedChannels.length; ch++) {
+      let chSum = 0;
+      for (let i = pos; i < pos + blockSize; i++) {
+        chSum += kWeightedChannels[ch][i] * kWeightedChannels[ch][i];
+      }
+      sumMs += channelWeights[ch] * (chSum / blockSize);
+    }
+    blockLoudness.push(sumMs);
+  }
+
+  if (!gated) {
+    // Ungated: simple average of all blocks
+    const avgMs = blockLoudness.reduce((a, b) => a + b, 0) / blockLoudness.length;
+    return msToLUFS(avgMs);
+  }
+
+  // Step 2: Absolute threshold gating (-70 LUFS)
+  const absoluteThreshold = Math.pow(10, (-70 + 0.691) / 10);
+  const passAbsolute = blockLoudness.filter(ms => ms >= absoluteThreshold);
+
+  if (passAbsolute.length === 0) return -Infinity;
+
+  // Step 3: Relative threshold gating (-10 LU below ungated average)
+  const avgAbsolute = passAbsolute.reduce((a, b) => a + b, 0) / passAbsolute.length;
+  const relativeThreshold = avgAbsolute * Math.pow(10, -10 / 10); // -10 LU
+
+  const passRelative = passAbsolute.filter(ms => ms >= relativeThreshold);
+  if (passRelative.length === 0) return -Infinity;
+
+  const avgGated = passRelative.reduce((a, b) => a + b, 0) / passRelative.length;
+  return msToLUFS(avgGated);
+}
+
+// Compute LRA (Loudness Range) per EBU Tech 3342
+function computeLRA(shortTermValues: number[]): number {
+  // Filter out -Infinity values
+  const validValues = shortTermValues.filter(v => isFinite(v) && v > -70);
+  if (validValues.length < 2) return 0;
+
+  // Absolute gate at -70 LUFS
+  const absoluteGated = validValues.filter(v => v >= -70);
+  if (absoluteGated.length < 2) return 0;
+
+  // Relative gate: -20 LU below ungated average
+  const ungatedAvg = absoluteGated.reduce((a, b) => a + b, 0) / absoluteGated.length;
+  const relativeThreshold = ungatedAvg - 20;
+  const relativeGated = absoluteGated.filter(v => v >= relativeThreshold);
+  if (relativeGated.length < 2) return 0;
+
+  // Sort and compute 10th and 95th percentiles
+  const sorted = [...relativeGated].sort((a, b) => a - b);
+  const p10 = sorted[Math.floor(sorted.length * 0.10)];
+  const p95 = sorted[Math.floor(sorted.length * 0.95)];
+
+  return Math.max(0, p95 - p10);
+}
+
+// Find sample peak (no oversampling)
+function findSamplePeak(channels: Float32Array[]): number {
   let peak = 0;
   for (const ch of channels) {
     for (let i = 0; i < ch.length; i++) {
@@ -24,9 +229,41 @@ function findPeakLinear(channels: Float32Array[]): number {
   return peak;
 }
 
+// Detect abrupt loudness changes (>6 LU within 2 seconds)
+function findAbruptChanges(
+  shortTermValues: number[],
+  shortTermTimes: number[]
+): { time: number; deltaLU: number }[] {
+  const changes: { time: number; deltaLU: number }[] = [];
+  const windowSize = 20; // ~2 seconds at 10Hz
+
+  for (let i = windowSize; i < shortTermValues.length; i++) {
+    const current = shortTermValues[i];
+    const previous = shortTermValues[i - windowSize];
+    if (isFinite(current) && isFinite(previous)) {
+      const delta = Math.abs(current - previous);
+      if (delta > 6) {
+        changes.push({ time: shortTermTimes[i], deltaLU: delta });
+      }
+    }
+  }
+
+  // Limit to top 5 most severe
+  return changes.sort((a, b) => b.deltaLU - a.deltaLU).slice(0, 5);
+}
+
+// Compute percentiles from an array
+function percentile(arr: number[], p: number): number {
+  const sorted = arr.filter(v => isFinite(v)).sort((a, b) => a - b);
+  if (sorted.length === 0) return -Infinity;
+  const idx = Math.floor(sorted.length * p);
+  return sorted[Math.min(idx, sorted.length - 1)];
+}
+
 export function computeLoudness(sampleRate: number, channels: Float32Array[]): LoudnessResult {
-  let tpLinear: number;
+  // Use ebur128-wasm for integrated loudness and true peak (gold standard)
   let integratedLUFS: number;
+  let tpLinear: number;
 
   if (channels.length === 1) {
     integratedLUFS = ebur128_integrated_mono(sampleRate, channels[0]);
@@ -39,10 +276,92 @@ export function computeLoudness(sampleRate: number, channels: Float32Array[]): L
     tpLinear = Math.max(Number(tpArr[0] ?? 0), Number(tpArr[1] ?? 0));
   }
 
-  // Fallback if ebur128 returns invalid true peak (0 or non-finite)
+  // Sample peak (non-oversampled)
+  const samplePeakLinear = findSamplePeak(channels);
+  const samplePeakDBFS = dbFromLinear(samplePeakLinear);
+
+  // Fallback if ebur128 returns invalid true peak
   if (!isFinite(tpLinear) || tpLinear <= 0) {
-    tpLinear = findPeakLinear(channels);
+    tpLinear = samplePeakLinear;
+  }
+  const truePeakDBTP = dbFromLinear(tpLinear);
+
+  // ISP margin (inter-sample peak headroom)
+  const ispMarginDB = truePeakDBTP - samplePeakDBFS;
+
+  // Apply K-weighting for manual loudness calculations
+  const kWeightedChannels = applyKWeighting(channels, sampleRate);
+
+  // Compute ungated integrated loudness
+  const integratedUngatedLUFS = computeIntegratedLoudness(kWeightedChannels, sampleRate, false);
+
+  // Compute momentary and short-term loudness
+  const { momentaryValues, shortTermValues, momentaryTimes, shortTermTimes } =
+    computeWindowedLoudness(kWeightedChannels, sampleRate);
+
+  // Max momentary and short-term
+  const maxMomentaryLUFS = momentaryValues.length > 0
+    ? Math.max(...momentaryValues.filter(v => isFinite(v)))
+    : integratedLUFS;
+  const maxShortTermLUFS = shortTermValues.length > 0
+    ? Math.max(...shortTermValues.filter(v => isFinite(v)))
+    : integratedLUFS;
+
+  // Short-term percentiles
+  const shortTermP10 = percentile(shortTermValues, 0.10);
+  const shortTermP50 = percentile(shortTermValues, 0.50);
+  const shortTermP90 = percentile(shortTermValues, 0.90);
+  const shortTermP95 = percentile(shortTermValues, 0.95);
+
+  // LRA (Loudness Range)
+  const loudnessRangeLU = computeLRA(shortTermValues);
+
+  // Downsample timeline for UI (target ~10Hz, max 500 points)
+  const maxPoints = 500;
+  const step = Math.max(1, Math.floor(shortTermValues.length / maxPoints));
+  const shortTermTimeline: number[] = [];
+  for (let i = 0; i < shortTermValues.length; i += step) {
+    shortTermTimeline.push(shortTermValues[i]);
   }
 
-  return { integratedLUFS, truePeakDBTP: dbFromLinear(tpLinear) };
+  // Find loudest and quietest segments
+  let loudestIdx = 0, quietestIdx = 0;
+  let loudestVal = -Infinity, quietestVal = Infinity;
+  for (let i = 0; i < shortTermValues.length; i++) {
+    if (isFinite(shortTermValues[i])) {
+      if (shortTermValues[i] > loudestVal) {
+        loudestVal = shortTermValues[i];
+        loudestIdx = i;
+      }
+      if (shortTermValues[i] < quietestVal) {
+        quietestVal = shortTermValues[i];
+        quietestIdx = i;
+      }
+    }
+  }
+  const loudestSegmentTime = shortTermTimes[loudestIdx] ?? 0;
+  const quietestSegmentTime = shortTermTimes[quietestIdx] ?? 0;
+
+  // Detect abrupt changes
+  const abruptChanges = findAbruptChanges(shortTermValues, shortTermTimes);
+
+  return {
+    integratedLUFS,
+    integratedUngatedLUFS,
+    truePeakDBTP,
+    samplePeakDBFS,
+    truePeakOversampling: 4, // ebur128-wasm uses 4x oversampling
+    ispMarginDB,
+    maxMomentaryLUFS,
+    maxShortTermLUFS,
+    shortTermP10,
+    shortTermP50,
+    shortTermP90,
+    shortTermP95,
+    loudnessRangeLU,
+    shortTermTimeline,
+    loudestSegmentTime,
+    quietestSegmentTime,
+    abruptChanges
+  };
 }
