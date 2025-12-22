@@ -7,9 +7,11 @@ export interface DynamicsOut {
   dynamicRangeDB: number;
   dcOffset: number;
   hasClipping: boolean;
+  silenceAtStartMs: number;
+  silenceAtEndMs: number;
 }
 
-export function computeDynamics(channels: Float32Array[]): DynamicsOut {
+export function computeDynamics(channels: Float32Array[], sampleRate: number = 48000): DynamicsOut {
   const n = channels[0].length;
   let sum = 0;
   let sumSq = 0;
@@ -30,7 +32,6 @@ export function computeDynamics(channels: Float32Array[]): DynamicsOut {
 
     const ax = Math.abs(x);
     if (ax > peak) peak = ax;
-    // Clipping: 3+ consecutive samples at max amplitude
     if (ax >= 0.9999) clipped = true;
 
     if (i % sampleStep === 0 && ax > 0.0001) {
@@ -44,12 +45,31 @@ export function computeDynamics(channels: Float32Array[]): DynamicsOut {
   const rmsDB = dbFromLinear(rms);
   const crest = peakDB - rmsDB;
 
-  // Dynamic range: difference between 95th percentile (loud) and 10th percentile (quiet)
-  // This is more meaningful than peak-to-noise for music
   absValues.sort((a, b) => a - b);
   const p10 = absValues[Math.floor(absValues.length * 0.10)] || 0.0001;
   const p95 = absValues[Math.floor(absValues.length * 0.95)] || peak;
   const dynamicRangeDB = dbFromLinear(p95) - dbFromLinear(p10);
+
+  // Silence detection (threshold: -60dB = 0.001)
+  const silenceThreshold = 0.001;
+  let silenceStartSamples = 0;
+  let silenceEndSamples = 0;
+
+  // Check start silence
+  for (let i = 0; i < n; i++) {
+    let maxAbs = 0;
+    for (let ch = 0; ch < channels.length; ch++) maxAbs = Math.max(maxAbs, Math.abs(channels[ch][i]));
+    if (maxAbs > silenceThreshold) break;
+    silenceStartSamples++;
+  }
+
+  // Check end silence
+  for (let i = n - 1; i >= 0; i--) {
+    let maxAbs = 0;
+    for (let ch = 0; ch < channels.length; ch++) maxAbs = Math.max(maxAbs, Math.abs(channels[ch][i]));
+    if (maxAbs > silenceThreshold) break;
+    silenceEndSamples++;
+  }
 
   return {
     peakDBFS: peakDB,
@@ -57,7 +77,9 @@ export function computeDynamics(channels: Float32Array[]): DynamicsOut {
     crestFactorDB: crest,
     dynamicRangeDB: Math.max(0, dynamicRangeDB),
     dcOffset: dc,
-    hasClipping: clipped
+    hasClipping: clipped,
+    silenceAtStartMs: Math.round((silenceStartSamples / sampleRate) * 1000),
+    silenceAtEndMs: Math.round((silenceEndSamples / sampleRate) * 1000)
   };
 }
 
@@ -67,10 +89,11 @@ export interface StereoOut {
   stereoWidthPct: number | null;
   correlation: number | null;
   subBassMonoCompatible: boolean | null;
+  balanceDB: number | null; // Positive = right heavy, negative = left heavy
 }
 
 export function computeStereo(channels: Float32Array[], sampleRate: number): StereoOut {
-  if (channels.length < 2) return { midEnergyDB: null, sideEnergyDB: null, stereoWidthPct: null, correlation: null, subBassMonoCompatible: null };
+  if (channels.length < 2) return { midEnergyDB: null, sideEnergyDB: null, stereoWidthPct: null, correlation: null, subBassMonoCompatible: null, balanceDB: null };
 
   const L = channels[0];
   const R = channels[1];
@@ -117,7 +140,12 @@ export function computeStereo(channels: Float32Array[], sampleRate: number): Ste
   const subBassCorr = computeCorrelation(subBassL, subBassR);
   const subBassMonoCompatible = subBassCorr > 0.8; // High correlation = mono compatible
 
-  return { midEnergyDB: midDB, sideEnergyDB: sideDB, stereoWidthPct: width, correlation: corr, subBassMonoCompatible };
+  // L/R Balance: positive = right heavy, negative = left heavy
+  const rmsL = Math.sqrt(sumLL / n);
+  const rmsR = Math.sqrt(sumRR / n);
+  const balanceDB = (rmsL > 0 && rmsR > 0) ? dbFromLinear(rmsR) - dbFromLinear(rmsL) : 0;
+
+  return { midEnergyDB: midDB, sideEnergyDB: sideDB, stereoWidthPct: width, correlation: corr, subBassMonoCompatible, balanceDB };
 }
 
 function computeCorrelation(a: Float32Array, b: Float32Array): number {

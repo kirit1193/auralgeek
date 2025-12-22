@@ -94,7 +94,7 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
 
       const loud = computeLoudness(decoded.sampleRate, decoded.channelData);
 
-      const dyn = computeDynamics(decoded.channelData);
+      const dyn = computeDynamics(decoded.channelData, decoded.sampleRate);
       const st = computeStereo(decoded.channelData, decoded.sampleRate);
       const bands = computeBandEnergiesMono(mono, decoded.sampleRate);
 
@@ -112,7 +112,9 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
           crestFactorDB: dyn.crestFactorDB,
           dynamicRangeDB: dyn.dynamicRangeDB,
           dcOffset: dyn.dcOffset,
-          hasClipping: dyn.hasClipping
+          hasClipping: dyn.hasClipping,
+          silenceAtStartMs: dyn.silenceAtStartMs,
+          silenceAtEndMs: dyn.silenceAtEndMs
         },
         spectral: {
           spectralCentroidHz: bands.spectralCentroidHz,
@@ -126,7 +128,8 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
           midEnergyDB: st.midEnergyDB,
           sideEnergyDB: st.sideEnergyDB,
           correlation: st.correlation,
-          subBassMonoCompatible: st.subBassMonoCompatible
+          subBassMonoCompatible: st.subBassMonoCompatible,
+          balanceDB: st.balanceDB
         },
         aiArtifacts: {
           shimmerDetected: false,

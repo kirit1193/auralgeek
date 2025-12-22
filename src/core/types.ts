@@ -25,6 +25,8 @@ export interface DynamicsMetrics {
   dynamicRangeDB: number | null;
   dcOffset: number | null;
   hasClipping: boolean;
+  silenceAtStartMs: number | null;
+  silenceAtEndMs: number | null;
 }
 
 export interface SpectralAnalysis {
@@ -41,6 +43,7 @@ export interface StereoAnalysis {
   sideEnergyDB: number | null;
   correlation: number | null;
   subBassMonoCompatible: boolean | null;
+  balanceDB: number | null;
 }
 
 export interface AIArtifactAnalysis {
