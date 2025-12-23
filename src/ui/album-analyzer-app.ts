@@ -3,7 +3,7 @@ import type { AlbumAnalysis, TrackAnalysis } from "../core/types";
 import { decodeToPCM } from "../analysis/decode";
 
 type WorkerMsg =
-  | { type: "progress"; current: number; total: number; filename: string }
+  | { type: "progress"; current: number; total: number; filename: string; stage?: string; stageProgress?: number }
   | { type: "result"; album: AlbumAnalysis }
   | { type: "error"; message: string };
 
@@ -328,6 +328,59 @@ export class AlbumAnalyzerApp extends LitElement {
       white-space: nowrap;
     }
 
+    .progress-stage {
+      font-family: 'Geist Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .progress-bars {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .progress-bar-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .progress-bar-label {
+      font-family: 'Geist Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      width: 50px;
+      text-align: right;
+      text-transform: uppercase;
+    }
+
+    .progress-bar-track {
+      flex: 1;
+      height: 6px;
+      background: var(--bg-deep);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-amber-dim), var(--accent-amber));
+      border-radius: 3px;
+      transition: width 0.2s ease;
+    }
+
+    .progress-bar-pct {
+      font-family: 'Geist Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--text-secondary);
+      width: 35px;
+    }
+
     /* === ALERTS === */
     .alert {
       display: flex;
@@ -548,6 +601,85 @@ export class AlbumAnalyzerApp extends LitElement {
       margin-top: 16px;
     }
 
+    /* === SUMMARY STATS GRID === */
+    .summary-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .stat-group {
+      background: var(--bg-inset);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+
+    .stat-group-title {
+      font-family: 'Geist Mono', monospace;
+      font-size: 0.5rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 3px 0;
+      font-size: 0.7rem;
+    }
+
+    .stat-label {
+      color: var(--text-secondary);
+    }
+
+    .stat-value {
+      font-family: 'Geist Mono', monospace;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .stat-value.good { color: var(--led-green); }
+    .stat-value.warning { color: var(--led-amber); }
+    .stat-value.danger { color: var(--led-red); }
+
+    .stat-inline {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .stat-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      background: var(--bg-deep);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      font-family: 'Geist Mono', monospace;
+      font-size: 0.6rem;
+    }
+
+    .stat-chip-label {
+      color: var(--text-dim);
+    }
+
+    .stat-chip-value {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
     /* === TRACK LIST === */
     .track-item {
       background: var(--bg-module);
@@ -698,6 +830,36 @@ export class AlbumAnalyzerApp extends LitElement {
     .module-icon {
       font-size: 0.6rem;
       opacity: 0.7;
+    }
+
+    .module-rating {
+      margin-left: auto;
+      font-family: 'Geist Mono', monospace;
+      font-size: 0.55rem;
+      font-weight: 500;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: var(--bg-deep);
+    }
+
+    .module-rating.excellent {
+      color: var(--led-green);
+      border: 1px solid rgba(74, 222, 128, 0.3);
+    }
+
+    .module-rating.good {
+      color: #22d3ee;
+      border: 1px solid rgba(34, 211, 238, 0.3);
+    }
+
+    .module-rating.fair {
+      color: var(--led-amber);
+      border: 1px solid rgba(251, 191, 36, 0.3);
+    }
+
+    .module-rating.poor {
+      color: var(--led-red);
+      border: 1px solid rgba(248, 113, 113, 0.3);
     }
 
     /* === METERS === */
@@ -1280,7 +1442,7 @@ export class AlbumAnalyzerApp extends LitElement {
 
   private busy = false;
   private status = "Ready";
-  private progress: { current: number; total: number; filename: string } | null = null;
+  private progress: { current: number; total: number; filename: string; stage?: string; stageProgress?: number } | null = null;
   private album: AlbumAnalysis | null = null;
   private error: string | null = null;
   private expandedTracks: Set<number> = new Set();
@@ -1331,8 +1493,14 @@ export class AlbumAnalyzerApp extends LitElement {
       this.worker.onmessage = (ev: MessageEvent<WorkerMsg>) => {
         const msg = ev.data;
         if (msg.type === "progress") {
-          this.progress = { current: msg.current, total: msg.total, filename: msg.filename };
-          this.status = `Analyzing ${msg.current}/${msg.total}`;
+          this.progress = {
+            current: msg.current,
+            total: msg.total,
+            filename: msg.filename,
+            stage: msg.stage,
+            stageProgress: msg.stageProgress
+          };
+          this.status = msg.stage ? `${msg.stage} ${msg.current}/${msg.total}` : `Analyzing ${msg.current}/${msg.total}`;
           this.requestUpdate();
         } else if (msg.type === "result") {
           this.album = msg.album;
@@ -1478,6 +1646,189 @@ export class AlbumAnalyzerApp extends LitElement {
     return Math.max(min, Math.min(max, val));
   }
 
+  // Section scoring functions - returns 0-10 score
+  private scoreLoudness(t: TrackAnalysis): number {
+    let score = 10;
+    const lufs = t.loudness.integratedLUFS ?? -14;
+    const lra = t.loudness.loudnessRangeLU ?? 8;
+
+    // Ideal range: -16 to -12 LUFS
+    if (lufs > -9) score -= 2.5; // Very loud, likely over-compressed
+    else if (lufs > -12) score -= 1.0; // Hot but acceptable
+    else if (lufs < -20) score -= 1.5; // Too quiet
+
+    // LRA penalty
+    if (lra < 4) score -= 2.0; // Very flat dynamics
+    else if (lra < 6) score -= 1.0;
+    else if (lra > 18) score -= 0.5; // Potentially too sparse
+
+    return this.clamp(score, 0, 10);
+  }
+
+  private scorePeaks(t: TrackAnalysis): number {
+    let score = 10;
+    const tp = t.loudness.truePeakDBTP ?? -3;
+    const isp = t.loudness.ispMarginDB ?? 0;
+
+    // True peak penalties
+    if (tp > -0.5) score -= 3.0; // Severe clipping risk
+    else if (tp > -1.0) score -= 1.5; // Above streaming threshold
+    else if (tp > -1.5) score -= 0.5; // Marginal headroom
+
+    // ISP margin (high = inter-sample peak risk)
+    if (isp > 1.0) score -= 1.5;
+    else if (isp > 0.5) score -= 0.5;
+
+    return this.clamp(score, 0, 10);
+  }
+
+  private scoreDynamics(t: TrackAnalysis): number {
+    let score = 10;
+    const dr = t.dynamics.dynamicRangeDB ?? 12;
+    const crest = t.dynamics.crestFactorDB ?? 10;
+    const plr = t.dynamics.plrDB ?? 12;
+
+    // Clipping is a major issue
+    if (t.dynamics.hasClipping) {
+      const clipCount = t.dynamics.clipEventCount ?? 0;
+      if (clipCount > 100) score -= 3.0;
+      else if (clipCount > 10) score -= 2.0;
+      else score -= 1.0;
+    }
+
+    // Dynamic range
+    if (dr < 6) score -= 2.0;
+    else if (dr < 10) score -= 1.0;
+
+    // Crest factor
+    if (crest < 6) score -= 1.5;
+    else if (crest < 8) score -= 0.5;
+
+    // PLR
+    if (plr < 8) score -= 1.0;
+
+    // DC offset
+    if (Math.abs(t.dynamics.dcOffset ?? 0) > 0.01) score -= 0.5;
+
+    return this.clamp(score, 0, 10);
+  }
+
+  private scoreStereo(t: TrackAnalysis): number {
+    let score = 10;
+    const corr = t.stereo.correlationMean ?? 0.8;
+    const worst = t.stereo.correlationWorst1Pct ?? 0;
+    const monoLoss = t.stereo.monoLoudnessDiffDB ?? 0;
+    const balance = Math.abs(t.stereo.balanceDB ?? 0);
+
+    // Correlation issues
+    if (corr < 0) score -= 2.5; // Out of phase
+    else if (corr < 0.3) score -= 1.5;
+    else if (corr < 0.5) score -= 0.5;
+
+    // Worst correlation
+    if (worst < -0.5) score -= 1.5;
+    else if (worst < 0) score -= 0.5;
+
+    // Mono compatibility
+    if (monoLoss < -4) score -= 2.0;
+    else if (monoLoss < -2) score -= 1.0;
+
+    // Balance
+    if (balance > 3) score -= 1.5;
+    else if (balance > 1.5) score -= 0.5;
+
+    // Phase issues
+    if (t.stereo.lowEndPhaseIssues) score -= 1.0;
+    if (t.stereo.subBassMonoCompatible === false) score -= 0.5;
+
+    return this.clamp(score, 0, 10);
+  }
+
+  private scoreSpectral(t: TrackAnalysis): number {
+    let score = 10;
+    const tilt = t.spectral.spectralTiltDBPerOctave ?? -3;
+    const harsh = t.spectral.harshnessIndex ?? 20;
+    const sib = t.spectral.sibilanceIndex ?? 15;
+
+    // Spectral tilt - ideal is slightly negative (-4 to 0)
+    if (tilt > 1) score -= 1.5; // Too bright
+    else if (tilt > 0) score -= 0.5;
+    if (tilt < -6) score -= 1.0; // Too dark
+
+    // Harshness (2-5kHz)
+    if (harsh > 35) score -= 2.0;
+    else if (harsh > 28) score -= 1.0;
+
+    // Sibilance (5-10kHz)
+    if (sib > 30) score -= 1.5;
+    else if (sib > 22) score -= 0.5;
+
+    return this.clamp(score, 0, 10);
+  }
+
+  private scoreStreaming(t: TrackAnalysis): number {
+    let score = 10;
+    const spotify = t.streamingSimulation.spotify;
+
+    if (spotify) {
+      const projTP = spotify.projectedTruePeakDBTP;
+      const gain = spotify.gainChangeDB;
+
+      // Post-normalization clipping risk
+      if (projTP > 0) score -= 3.0;
+      else if (projTP > -1) score -= 1.5;
+
+      // Severe attenuation (loudness war penalty)
+      if (gain < -8) score -= 1.5;
+      else if (gain < -4) score -= 0.5;
+    }
+
+    return this.clamp(score, 0, 10);
+  }
+
+  private scoreMusical(t: TrackAnalysis): number {
+    let score = 10;
+    const bpmConf = t.musicalFeatures.bpmConfidence ?? 0;
+    const keyConf = t.musicalFeatures.keyConfidence ?? 0;
+    const tonal = t.musicalFeatures.tonalnessScore ?? 50;
+    const stability = t.musicalFeatures.beatStabilityScore ?? 50;
+
+    // Low confidence = ambiguous content
+    if (bpmConf < 30) score -= 1.5;
+    else if (bpmConf < 50) score -= 0.5;
+
+    if (keyConf < 30) score -= 1.0;
+    else if (keyConf < 50) score -= 0.3;
+
+    // Tonalness
+    if (tonal < 30) score -= 1.0;
+
+    // Beat stability
+    if (stability < 40) score -= 0.5;
+
+    return this.clamp(score, 0, 10);
+  }
+
+  private scoreArtifacts(t: TrackAnalysis): number {
+    let score = 10;
+    const aiScore = t.aiArtifacts.overallAIScore ?? 0;
+
+    if (aiScore > 70) score -= 3.0;
+    else if (aiScore > 50) score -= 2.0;
+    else if (aiScore > 30) score -= 1.0;
+
+    if (t.aiArtifacts.shimmerDetected) score -= 0.5;
+
+    return this.clamp(score, 0, 10);
+  }
+
+  private getRatingClass(score: number): string {
+    if (score >= 8.5) return "excellent";
+    if (score >= 7.0) return "good";
+    if (score >= 5.0) return "fair";
+    return "poor";
+  }
+
   private renderInfoBtn(text: string): TemplateResult {
     return html`<span class="info-wrap"><button class="info-btn" tabindex="0">?</button><span class="info-tooltip">${text}</span></span>`;
   }
@@ -1581,8 +1932,27 @@ export class AlbumAnalyzerApp extends LitElement {
           ${this.busy && this.progress ? html`
             <div class="progress-display">
               <div class="progress-ring"></div>
-              <div class="progress-count">${this.progress.current} / ${this.progress.total}</div>
+              <div class="progress-count">Track ${this.progress.current} / ${this.progress.total}</div>
               <div class="progress-filename">${this.progress.filename}</div>
+              ${this.progress.stage ? html`<div class="progress-stage">${this.progress.stage}</div>` : null}
+              <div class="progress-bars">
+                <div class="progress-bar-wrap">
+                  <span class="progress-bar-label">Track</span>
+                  <div class="progress-bar-track">
+                    <div class="progress-bar-fill" style="width:${Math.round((this.progress.current / this.progress.total) * 100)}%"></div>
+                  </div>
+                  <span class="progress-bar-pct">${Math.round((this.progress.current / this.progress.total) * 100)}%</span>
+                </div>
+                ${this.progress.stageProgress !== undefined ? html`
+                  <div class="progress-bar-wrap">
+                    <span class="progress-bar-label">Stage</span>
+                    <div class="progress-bar-track">
+                      <div class="progress-bar-fill" style="width:${this.progress.stageProgress}%"></div>
+                    </div>
+                    <span class="progress-bar-pct">${this.progress.stageProgress}%</span>
+                  </div>
+                ` : null}
+              </div>
             </div>
           ` : !this.busy && !this.album ? html`
             <div class="drop-zone" @dragover=${(e: DragEvent) => e.preventDefault()} @drop=${this.onDrop}>
@@ -1601,6 +1971,7 @@ export class AlbumAnalyzerApp extends LitElement {
   }
 
   private renderReport(album: AlbumAnalysis) {
+    const s = album.summary;
     return html`
       <div class="panel">
         <div class="summary-row">
@@ -1623,8 +1994,109 @@ export class AlbumAnalyzerApp extends LitElement {
           </div>
         </div>
         <div class="summary-meters">
-          ${this.renderMeter("Average Loudness", "Integrated loudness (LUFS) per EBU R128. Target: -14 LUFS for Spotify, -16 for Apple Music.", album.summary.avgLUFS ?? null, "LUFS", "loudness", (v) => ((v + 24) / 20) * 100, ["-24", "-19", "-14", "-9", "-4"])}
-          ${this.renderMeter("Max True Peak", "Highest inter-sample peak. Keep below -1 dBTP to prevent clipping.", album.summary.maxTruePeak ?? null, "dBTP", "peak", (v) => ((v + 12) / 12) * 100, ["-12", "-9", "-6", "-3", "0"])}
+          ${this.renderMeter("Average Loudness", "Integrated loudness (LUFS) per EBU R128. Target: -14 LUFS for Spotify, -16 for Apple Music.", s.avgLUFS ?? null, "LUFS", "loudness", (v) => ((v + 24) / 20) * 100, ["-24", "-19", "-14", "-9", "-4"])}
+          ${this.renderMeter("Max True Peak", "Highest inter-sample peak. Keep below -1 dBTP to prevent clipping.", s.maxTruePeak ?? null, "dBTP", "peak", (v) => ((v + 12) / 12) * 100, ["-12", "-9", "-6", "-3", "0"])}
+        </div>
+
+        <!-- Enhanced Summary Stats -->
+        <div class="summary-stats">
+          <!-- Loudness Stats -->
+          <div class="stat-group">
+            <div class="stat-group-title"><span>◐</span> Loudness</div>
+            <div class="stat-row">
+              <span class="stat-label">Range</span>
+              <span class="stat-value">${s.lufsRange ?? '—'}</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Consistency</span>
+              <span class="stat-value ${(s.lufsConsistency ?? 0) > 3 ? 'warning' : ''}">${s.lufsConsistency?.toFixed(1) ?? '—'} LU σ</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Avg LRA</span>
+              <span class="stat-value">${s.avgLRA?.toFixed(1) ?? '—'} LU</span>
+            </div>
+          </div>
+
+          <!-- Peaks Stats -->
+          <div class="stat-group">
+            <div class="stat-group-title"><span>▲</span> Peaks</div>
+            <div class="stat-row">
+              <span class="stat-label">Avg True Peak</span>
+              <span class="stat-value">${s.avgTruePeak?.toFixed(1) ?? '—'} dBTP</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Max True Peak</span>
+              <span class="stat-value ${(s.maxTruePeak ?? -10) > -1 ? 'danger' : ''}">${s.maxTruePeak?.toFixed(1) ?? '—'} dBTP</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Above -1 dBTP</span>
+              <span class="stat-value ${(s.tracksAboveNeg1dBTP ?? 0) > 0 ? 'warning' : 'good'}">${s.tracksAboveNeg1dBTP ?? 0} tracks</span>
+            </div>
+          </div>
+
+          <!-- Dynamics Stats -->
+          <div class="stat-group">
+            <div class="stat-group-title"><span>◧</span> Dynamics</div>
+            <div class="stat-row">
+              <span class="stat-label">Avg DR</span>
+              <span class="stat-value">${s.avgDynamicRange?.toFixed(1) ?? '—'} dB</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Avg Crest</span>
+              <span class="stat-value">${s.avgCrestFactor?.toFixed(1) ?? '—'} dB</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Clipping</span>
+              <span class="stat-value ${(s.tracksWithClipping ?? 0) > 0 ? 'danger' : 'good'}">${s.tracksWithClipping ?? 0} tracks</span>
+            </div>
+          </div>
+
+          <!-- Stereo Stats -->
+          <div class="stat-group">
+            <div class="stat-group-title"><span>◑</span> Stereo</div>
+            <div class="stat-row">
+              <span class="stat-label">Avg Width</span>
+              <span class="stat-value">${s.avgStereoWidth ?? '—'}%</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Avg Correlation</span>
+              <span class="stat-value ${(s.avgCorrelation ?? 1) < 0.5 ? 'warning' : ''}">${s.avgCorrelation?.toFixed(2) ?? '—'}</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Phase Issues</span>
+              <span class="stat-value ${(s.tracksWithPhaseIssues ?? 0) > 0 ? 'warning' : 'good'}">${s.tracksWithPhaseIssues ?? 0} tracks</span>
+            </div>
+          </div>
+
+          <!-- Spectral Stats -->
+          <div class="stat-group">
+            <div class="stat-group-title"><span>◔</span> Spectral</div>
+            <div class="stat-row">
+              <span class="stat-label">Avg Tilt</span>
+              <span class="stat-value">${s.avgSpectralTilt?.toFixed(1) ?? '—'} dB/oct</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Avg Harshness</span>
+              <span class="stat-value ${(s.avgHarshness ?? 0) > 30 ? 'warning' : ''}">${s.avgHarshness ?? '—'}%</span>
+            </div>
+          </div>
+
+          <!-- Quality Stats -->
+          <div class="stat-group">
+            <div class="stat-group-title"><span>✓</span> Quality</div>
+            <div class="stat-row">
+              <span class="stat-label">Issues</span>
+              <span class="stat-value ${(s.tracksWithIssues ?? 0) > 0 ? 'danger' : 'good'}">${s.tracksWithIssues ?? 0} tracks (${s.totalIssues ?? 0} total)</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Warnings</span>
+              <span class="stat-value ${(s.tracksWithWarnings ?? 0) > 0 ? 'warning' : 'good'}">${s.tracksWithWarnings ?? 0} tracks (${s.totalWarnings ?? 0} total)</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">AI Artifacts</span>
+              <span class="stat-value ${(s.tracksWithArtifacts ?? 0) > 0 ? 'warning' : 'good'}">${s.tracksWithArtifacts ?? 0} tracks</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1657,6 +2129,18 @@ export class AlbumAnalyzerApp extends LitElement {
       return `${m}:${String(s).padStart(2, '0')}`;
     };
 
+    // Calculate section scores
+    const scores = {
+      loudness: this.scoreLoudness(t),
+      peaks: this.scorePeaks(t),
+      dynamics: this.scoreDynamics(t),
+      stereo: this.scoreStereo(t),
+      spectral: this.scoreSpectral(t),
+      musical: this.scoreMusical(t),
+      streaming: this.scoreStreaming(t),
+      artifacts: this.scoreArtifacts(t)
+    };
+
     return html`
       <div class="track-item ${isExpanded ? 'expanded' : ''}">
         <div class="track-header" @click=${() => this.toggleTrack(t.trackNumber)}>
@@ -1676,7 +2160,7 @@ export class AlbumAnalyzerApp extends LitElement {
           <div class="track-content-inner">
             <!-- LOUDNESS MODULE (EBU R128) -->
             <div class="metric-module">
-              <h4 class="module-title"><span class="module-icon">◐</span> Loudness (EBU R128)</h4>
+              <h4 class="module-title"><span class="module-icon">◐</span> Loudness<span class="module-rating ${this.getRatingClass(scores.loudness)}">${scores.loudness.toFixed(1)}</span></h4>
               ${this.renderMeter("Integrated", "Gated loudness per EBU R128. Target: -14 LUFS (Spotify), -16 (Apple).", t.loudness.integratedLUFS, "LUFS", "loudness", (v) => ((v+24)/20)*100, ["-24", "-19", "-14", "-9", "-4"])}
               ${this.renderMetricRow("Ungated", "Integrated loudness without gating.", `${t.loudness.integratedUngatedLUFS?.toFixed(1) ?? "—"} LUFS`, "", { numValue: t.loudness.integratedUngatedLUFS, type: "center", min: -24, max: -4 })}
               <div class="section-subtitle">Short-term Analysis</div>
@@ -1689,7 +2173,7 @@ export class AlbumAnalyzerApp extends LitElement {
 
             <!-- PEAKS & HEADROOM -->
             <div class="metric-module">
-              <h4 class="module-title"><span class="module-icon">▲</span> Peaks & Headroom</h4>
+              <h4 class="module-title"><span class="module-icon">▲</span> Peaks<span class="module-rating ${this.getRatingClass(scores.peaks)}">${scores.peaks.toFixed(1)}</span></h4>
               ${this.renderMeter("True Peak", `Inter-sample peak (${t.loudness.truePeakOversampling ?? 4}x oversampled). Keep ≤ -1 dBTP.`, t.loudness.truePeakDBTP, "dBTP", "peak", (v) => ((v+12)/12)*100, ["-12", "-9", "-6", "-3", "0"])}
               ${this.renderMetricRow("Sample Peak", "Non-oversampled peak.", `${t.loudness.samplePeakDBFS?.toFixed(1) ?? "—"} dBFS`, "", { numValue: t.loudness.samplePeakDBFS, type: "level", min: -24, max: 0 })}
               ${this.renderMetricRow("ISP Margin", "True Peak vs Sample Peak. High = ISP risk.", `${t.loudness.ispMarginDB?.toFixed(2) ?? "—"} dB`, (t.loudness.ispMarginDB ?? 0) > 0.5 ? "warning" : "", { numValue: t.loudness.ispMarginDB, type: "low-good", min: 0, max: 2 })}
@@ -1700,7 +2184,7 @@ export class AlbumAnalyzerApp extends LitElement {
 
             <!-- DYNAMICS -->
             <div class="metric-module">
-              <h4 class="module-title"><span class="module-icon">◧</span> Dynamics</h4>
+              <h4 class="module-title"><span class="module-icon">◧</span> Dynamics<span class="module-rating ${this.getRatingClass(scores.dynamics)}">${scores.dynamics.toFixed(1)}</span></h4>
               ${this.renderMeter("Dynamic Range", "Percentile-based DR. Higher = more dynamic.", t.dynamics.dynamicRangeDB, "dB", "dynamics", (v) => (v/40)*100, ["0", "10", "20", "30", "40"])}
               ${this.renderMetricRow("PLR", "Peak-to-Loudness Ratio. Lower = squashed.", `${t.dynamics.plrDB?.toFixed(1) ?? "—"} dB`, (t.dynamics.plrDB ?? 20) < 8 ? "warning" : "", { numValue: t.dynamics.plrDB, type: "high-good", min: 0, max: 20 })}
               ${this.renderMetricRow("PSR", "Peak-to-Short-term Ratio.", `${t.dynamics.psrDB?.toFixed(1) ?? "—"} dB`, "", { numValue: t.dynamics.psrDB, type: "high-good", min: 0, max: 15 })}
@@ -1722,7 +2206,7 @@ export class AlbumAnalyzerApp extends LitElement {
 
             <!-- STEREO FIELD -->
             <div class="metric-module">
-              <h4 class="module-title"><span class="module-icon">◑</span> Stereo & Mono</h4>
+              <h4 class="module-title"><span class="module-icon">◑</span> Stereo<span class="module-rating ${this.getRatingClass(scores.stereo)}">${scores.stereo.toFixed(1)}</span></h4>
               ${this.renderMeter("Stereo Width", "Side/mid ratio. 50-80% is typical.", t.stereo.stereoWidthPct, "%", "width", (v) => (v/120)*100, ["0", "30", "60", "90", "120"])}
               ${this.renderMetricRow("Mid Energy", "Center channel energy.", `${t.stereo.midEnergyDB?.toFixed(1) ?? "—"} dB`, "", { numValue: t.stereo.midEnergyDB, type: "level", min: -40, max: 0 })}
               ${this.renderMetricRow("Side Energy", "Stereo difference energy.", `${t.stereo.sideEnergyDB?.toFixed(1) ?? "—"} dB`, "", { numValue: t.stereo.sideEnergyDB, type: "level", min: -40, max: 0 })}
@@ -1742,7 +2226,7 @@ export class AlbumAnalyzerApp extends LitElement {
 
             <!-- SPECTRAL -->
             <div class="metric-module">
-              <h4 class="module-title"><span class="module-icon">◔</span> Spectral Profile</h4>
+              <h4 class="module-title"><span class="module-icon">◔</span> Spectral<span class="module-rating ${this.getRatingClass(scores.spectral)}">${scores.spectral.toFixed(1)}</span></h4>
               ${this.renderMetricRow("Tilt", "Spectral slope. Negative = dark, Positive = bright.", `${t.spectral.spectralTiltDBPerOctave?.toFixed(1) ?? "—"} dB/oct`, Math.abs(t.spectral.spectralTiltDBPerOctave ?? 0) > 4 ? "warning" : "", { numValue: t.spectral.spectralTiltDBPerOctave, type: "center", min: -8, max: 4 })}
               ${this.renderMetricRow("Centroid", "Brightness indicator.", `${t.spectral.spectralCentroidHz?.toFixed(0) ?? "—"} Hz`, "", { numValue: t.spectral.spectralCentroidHz, type: "center", min: 500, max: 6000 })}
               ${this.renderMetricRow("Rolloff", "85% energy cutoff.", `${t.spectral.spectralRolloffHz?.toFixed(0) ?? "—"} Hz`, "", { numValue: t.spectral.spectralRolloffHz, type: "center", min: 2000, max: 16000 })}
@@ -1755,27 +2239,10 @@ export class AlbumAnalyzerApp extends LitElement {
               ${this.renderMetricRow("Flatness", "0 = tonal, 1 = noise.", `${t.spectral.spectralFlatness?.toFixed(2) ?? "—"}`, "", { numValue: t.spectral.spectralFlatness, type: "center", min: 0, max: 1 })}
             </div>
 
-            <!-- STREAMING PLATFORMS -->
-            <div class="metric-module">
-              <h4 class="module-title"><span class="module-icon">☁</span> Streaming Normalization</h4>
-              <div class="platform-grid">
-                ${this.renderPlatformCard(t.streamingSimulation.spotify)}
-                ${this.renderPlatformCard(t.streamingSimulation.appleMusic)}
-                ${this.renderPlatformCard(t.streamingSimulation.youtube)}
-                ${this.renderPlatformCard(t.streamingSimulation.tidal)}
-              </div>
-              ${t.streamingSimulation.recommendation ? html`
-                <div class="recommendation-box">
-                  <div class="recommendation-title">Recommendation</div>
-                  ${t.streamingSimulation.recommendation}
-                </div>
-              ` : null}
-            </div>
-
-            <!-- STACKED: MUSICAL FEATURES + ARTIFACTS -->
+            <!-- MUSICAL + STREAMING + ARTIFACTS (stacked) -->
             <div class="stacked-modules">
               <div class="metric-module">
-                <h4 class="module-title"><span class="module-icon">♪</span> Musical Features</h4>
+                <h4 class="module-title"><span class="module-icon">♪</span> Musical<span class="module-rating ${this.getRatingClass(scores.musical)}">${scores.musical.toFixed(1)}</span></h4>
                 <div class="music-feature-row">
                   <span class="music-primary">${t.musicalFeatures.bpmPrimary ?? "—"} BPM</span>
                   <span class="music-confidence">${t.musicalFeatures.bpmConfidence ?? 0}%</span>
@@ -1785,10 +2252,28 @@ export class AlbumAnalyzerApp extends LitElement {
                   <span class="music-primary">${t.musicalFeatures.keyPrimary ?? "—"}</span>
                   <span class="music-confidence">${t.musicalFeatures.keyConfidence ?? 0}%</span>
                 </div>
+                ${this.renderMetricRow("Beat Stability", "Timing consistency.", `${t.musicalFeatures.beatStabilityScore ?? 0}%`, "", { numValue: t.musicalFeatures.beatStabilityScore, type: "high-good", min: 0, max: 100 })}
                 ${this.renderMetricRow("Tonalness", "How well audio fits key model.", `${t.musicalFeatures.tonalnessScore ?? 0}%`, "", { numValue: t.musicalFeatures.tonalnessScore, type: "high-good", min: 0, max: 100 })}
               </div>
+
               <div class="metric-module">
-                <h4 class="module-title"><span class="module-icon">◍</span> Artifacts</h4>
+                <h4 class="module-title"><span class="module-icon">☁</span> Streaming<span class="module-rating ${this.getRatingClass(scores.streaming)}">${scores.streaming.toFixed(1)}</span></h4>
+                <div class="platform-grid">
+                  ${this.renderPlatformCard(t.streamingSimulation.spotify)}
+                  ${this.renderPlatformCard(t.streamingSimulation.appleMusic)}
+                  ${this.renderPlatformCard(t.streamingSimulation.youtube)}
+                  ${this.renderPlatformCard(t.streamingSimulation.tidal)}
+                </div>
+                ${t.streamingSimulation.recommendation ? html`
+                  <div class="recommendation-box">
+                    <div class="recommendation-title">Recommendation</div>
+                    ${t.streamingSimulation.recommendation}
+                  </div>
+                ` : null}
+              </div>
+
+              <div class="metric-module">
+                <h4 class="module-title"><span class="module-icon">◍</span> Artifacts<span class="module-rating ${this.getRatingClass(scores.artifacts)}">${scores.artifacts.toFixed(1)}</span></h4>
                 ${this.renderMetricRow("AI Score", "Lower is better. Detects unnatural HF shimmer.", `${t.aiArtifacts.overallAIScore?.toFixed(0) ?? 0}/100`, t.aiArtifacts.overallAIScore && t.aiArtifacts.overallAIScore > 30 ? "warning" : "good", { numValue: t.aiArtifacts.overallAIScore, type: "low-good", min: 0, max: 100 })}
                 ${this.renderMetricRow("Shimmer", "HF shimmer detection.", t.aiArtifacts.shimmerDetected ? "Detected" : "None", t.aiArtifacts.shimmerDetected ? "warning" : "good")}
               </div>

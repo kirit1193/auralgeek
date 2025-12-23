@@ -22,9 +22,13 @@ type AnalyzeRequest = {
 };
 
 type ProgressMsg =
-  | { type: "progress"; current: number; total: number; filename: string }
+  | { type: "progress"; current: number; total: number; filename: string; stage?: string; stageProgress?: number }
   | { type: "result"; album: AlbumAnalysis }
   | { type: "error"; message: string };
+
+// Analysis stages for modular progress
+const STAGES = ["Loudness", "Dynamics", "Stereo", "Spectral", "Musical", "Streaming"] as const;
+type AnalysisStage = typeof STAGES[number];
 
 function scoreTrack(t: TrackAnalysis): number {
   let score = 10;
@@ -111,15 +115,22 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
     let totalSeconds = 0;
     let totalSizeMB = 0;
 
+    // Helper to send progress updates
+    const sendProgress = (trackNum: number, filename: string, stage?: string, stageIdx?: number) => {
+      (self as any).postMessage({
+        type: "progress",
+        current: trackNum,
+        total: decodedTracks.length,
+        filename,
+        stage,
+        stageProgress: stageIdx !== undefined ? Math.round(((stageIdx + 1) / STAGES.length) * 100) : undefined
+      } satisfies ProgressMsg);
+    };
+
     for (let i = 0; i < decodedTracks.length; i++) {
       const decoded = decodedTracks[i];
 
-      (self as any).postMessage({
-        type: "progress",
-        current: i + 1,
-        total: decodedTracks.length,
-        filename: decoded.filename
-      } satisfies ProgressMsg);
+      sendProgress(i + 1, decoded.filename, "Preparing", 0);
 
       const durationSeconds = decoded.channelData[0].length / decoded.sampleRate;
 
@@ -157,12 +168,23 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
         isTrueStereo
       };
 
-      // Compute all metrics
+      // Compute all metrics with stage progress
+      sendProgress(i + 1, decoded.filename, "Loudness", 0);
       const loud = computeLoudness(decoded.sampleRate, decoded.channelData);
+
+      sendProgress(i + 1, decoded.filename, "Dynamics", 1);
       const dyn = computeDynamics(decoded.channelData, decoded.sampleRate);
+
+      sendProgress(i + 1, decoded.filename, "Stereo", 2);
       const st = computeStereo(decoded.channelData, decoded.sampleRate);
+
+      sendProgress(i + 1, decoded.filename, "Spectral", 3);
       const bands = computeBandEnergiesMono(mono, decoded.sampleRate);
+
+      sendProgress(i + 1, decoded.filename, "Musical", 4);
       const musical = computeMusicalFeatures(mono, decoded.sampleRate);
+
+      sendProgress(i + 1, decoded.filename, "Streaming", 5);
       const streaming = computeStreamingSimulation(loud.integratedLUFS, loud.truePeakDBTP);
 
       // Compute PLR/PSR (require loudness values)
@@ -267,13 +289,45 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
       totalSizeMB += params.filesizeMB;
     }
 
+    // Helper to compute stats
+    const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+    const stdDev = (arr: number[]) => {
+      if (arr.length < 2) return 0;
+      const mean = avg(arr);
+      const variance = arr.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / arr.length;
+      return Math.sqrt(variance);
+    };
+
+    // Gather all metrics
     const lufsValues = tracks.map(t => t.loudness.integratedLUFS).filter((x): x is number => x !== null);
     const tpValues = tracks.map(t => t.loudness.truePeakDBTP).filter((x): x is number => x !== null);
     const aiValues = tracks.map(t => t.aiArtifacts.overallAIScore).filter((x): x is number => x !== null);
+    const lraValues = tracks.map(t => t.loudness.loudnessRangeLU).filter((x): x is number => x !== null);
+    const drValues = tracks.map(t => t.dynamics.dynamicRangeDB).filter((x): x is number => x !== null);
+    const crestValues = tracks.map(t => t.dynamics.crestFactorDB).filter((x): x is number => x !== null);
+    const widthValues = tracks.map(t => t.stereo.stereoWidthPct).filter((x): x is number => x !== null);
+    const corrValues = tracks.map(t => t.stereo.correlationMean).filter((x): x is number => x !== null);
+    const tiltValues = tracks.map(t => t.spectral.spectralTiltDBPerOctave).filter((x): x is number => x !== null);
+    const harshValues = tracks.map(t => t.spectral.harshnessIndex).filter((x): x is number => x !== null);
 
-    const avgLUFS = lufsValues.length ? (lufsValues.reduce((a, b) => a + b, 0) / lufsValues.length) : -14;
+    // Calculate summary stats
+    const avgLUFS = avg(lufsValues);
+    const minLUFS = lufsValues.length ? Math.min(...lufsValues) : undefined;
+    const maxLUFS = lufsValues.length ? Math.max(...lufsValues) : undefined;
     const maxTP = tpValues.length ? Math.max(...tpValues) : -3;
-    const avgAI = aiValues.length ? (aiValues.reduce((a, b) => a + b, 0) / aiValues.length) : 0;
+    const avgTP = avg(tpValues);
+    const avgAI = avg(aiValues);
+    const lufsConsistency = stdDev(lufsValues);
+
+    // Count tracks with issues
+    const tracksAboveNeg1dBTP = tracks.filter(t => (t.loudness.truePeakDBTP ?? -10) > -1).length;
+    const tracksWithClipping = tracks.filter(t => t.dynamics.hasClipping).length;
+    const tracksWithPhaseIssues = tracks.filter(t => t.stereo.lowEndPhaseIssues).length;
+    const tracksWithArtifacts = tracks.filter(t => (t.aiArtifacts.overallAIScore ?? 0) > 30).length;
+    const tracksWithIssues = tracks.filter(t => t.issues.length > 0).length;
+    const tracksWithWarnings = tracks.filter(t => t.warnings.length > 0).length;
+    const totalIssues = tracks.reduce((sum, t) => sum + t.issues.length, 0);
+    const totalWarnings = tracks.reduce((sum, t) => sum + t.warnings.length, 0);
 
     const scores = tracks.map(scoreTrack);
     const overallScore = scores.length ? Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)) : 0;
@@ -289,10 +343,42 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
       overallScore,
       distributionReady,
       summary: {
+        // Loudness
         avgLUFS: Number(avgLUFS.toFixed(1)),
+        minLUFS: minLUFS !== undefined ? Number(minLUFS.toFixed(1)) : undefined,
+        maxLUFS: maxLUFS !== undefined ? Number(maxLUFS.toFixed(1)) : undefined,
+        lufsRange: lufsValues.length >= 2 ? `${minLUFS!.toFixed(1)} to ${maxLUFS!.toFixed(1)} LUFS` : undefined,
+        lufsConsistency: Number(lufsConsistency.toFixed(2)),
+        avgLRA: lraValues.length ? Number(avg(lraValues).toFixed(1)) : undefined,
+
+        // Peaks
         maxTruePeak: Number(maxTP.toFixed(1)),
+        avgTruePeak: tpValues.length ? Number(avgTP.toFixed(1)) : undefined,
+        tracksAboveNeg1dBTP,
+
+        // Dynamics
+        avgDynamicRange: drValues.length ? Number(avg(drValues).toFixed(1)) : undefined,
+        avgCrestFactor: crestValues.length ? Number(avg(crestValues).toFixed(1)) : undefined,
+        tracksWithClipping,
+
+        // Stereo
+        avgStereoWidth: widthValues.length ? Number(avg(widthValues).toFixed(0)) : undefined,
+        avgCorrelation: corrValues.length ? Number(avg(corrValues).toFixed(2)) : undefined,
+        tracksWithPhaseIssues,
+
+        // Spectral
+        avgSpectralTilt: tiltValues.length ? Number(avg(tiltValues).toFixed(1)) : undefined,
+        avgHarshness: harshValues.length ? Number(avg(harshValues).toFixed(0)) : undefined,
+
+        // AI/Artifacts
         avgAIScore: Number(avgAI.toFixed(1)),
-        lufsRange: lufsValues.length ? `${Math.min(...lufsValues).toFixed(1)} to ${Math.max(...lufsValues).toFixed(1)} LUFS` : undefined
+        tracksWithArtifacts,
+
+        // Quality breakdown
+        tracksWithIssues,
+        tracksWithWarnings,
+        totalIssues,
+        totalWarnings
       },
       tracks
     };

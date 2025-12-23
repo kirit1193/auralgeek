@@ -189,10 +189,42 @@ export interface TrackAnalysis {
 }
 
 export interface AlbumSummary {
+  // Loudness
   avgLUFS?: number;
-  maxTruePeak?: number;
-  avgAIScore?: number;
+  minLUFS?: number;
+  maxLUFS?: number;
   lufsRange?: string;
+  lufsConsistency?: number; // standard deviation
+  avgLRA?: number;
+
+  // Peaks
+  maxTruePeak?: number;
+  avgTruePeak?: number;
+  tracksAboveNeg1dBTP?: number;
+
+  // Dynamics
+  avgDynamicRange?: number;
+  avgCrestFactor?: number;
+  tracksWithClipping?: number;
+
+  // Stereo
+  avgStereoWidth?: number;
+  avgCorrelation?: number;
+  tracksWithPhaseIssues?: number;
+
+  // Spectral
+  avgSpectralTilt?: number;
+  avgHarshness?: number;
+
+  // AI/Artifacts
+  avgAIScore?: number;
+  tracksWithArtifacts?: number;
+
+  // Quality breakdown
+  tracksWithIssues?: number;
+  tracksWithWarnings?: number;
+  totalIssues?: number;
+  totalWarnings?: number;
 }
 
 export interface AlbumAnalysis {
