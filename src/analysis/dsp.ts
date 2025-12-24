@@ -19,6 +19,10 @@ export interface DynamicsOut {
   // Microdynamics
   transientDensity: number; // events per minute
   microdynamicContrast: number; // median of short-window crest factors
+
+  // === NEW: Dynamic envelope characterization (1.1B) ===
+  attackSpeedIndex: number; // median positive slope of RMS envelope (dB/ms)
+  releaseTailMs: number; // median decay time from peak to -10dB
 }
 
 // Detect transients using energy derivative threshold
@@ -95,6 +99,91 @@ function computeMicrodynamicContrast(mono: Float32Array, sampleRate: number): nu
   // Return median crest factor
   crestFactors.sort((a, b) => a - b);
   return crestFactors[Math.floor(crestFactors.length / 2)];
+}
+
+// === NEW: Compute attack speed index (1.1B) ===
+// Median positive slope of RMS envelope (dB/ms)
+function computeAttackSpeedIndex(mono: Float32Array, sampleRate: number): number {
+  const windowMs = 10; // 10ms windows for high resolution
+  const windowSize = Math.floor(sampleRate * windowMs / 1000);
+  const hopSize = Math.floor(windowSize / 2);
+
+  // Compute RMS envelope in dB
+  const rmsEnvelope: number[] = [];
+  for (let i = 0; i + windowSize < mono.length; i += hopSize) {
+    let sumSq = 0;
+    for (let j = 0; j < windowSize; j++) {
+      sumSq += mono[i + j] * mono[i + j];
+    }
+    const rmsLinear = Math.sqrt(sumSq / windowSize);
+    const rmsDB = rmsLinear > 0.0001 ? dbFromLinear(rmsLinear) : -100;
+    rmsEnvelope.push(rmsDB);
+  }
+
+  // Compute positive slopes (attacks)
+  const posSlopes: number[] = [];
+  const hopMs = hopSize / sampleRate * 1000;
+
+  for (let i = 1; i < rmsEnvelope.length; i++) {
+    const slope = (rmsEnvelope[i] - rmsEnvelope[i - 1]) / hopMs; // dB/ms
+    if (slope > 0.1) { // Only significant positive slopes
+      posSlopes.push(slope);
+    }
+  }
+
+  if (posSlopes.length === 0) return 0;
+
+  // Return median positive slope
+  posSlopes.sort((a, b) => a - b);
+  return posSlopes[Math.floor(posSlopes.length / 2)];
+}
+
+// === NEW: Compute release tail index (1.1B) ===
+// Median decay time from peak to -10dB
+function computeReleaseTailMs(mono: Float32Array, sampleRate: number): number {
+  const windowMs = 10;
+  const windowSize = Math.floor(sampleRate * windowMs / 1000);
+  const hopSize = Math.floor(windowSize / 2);
+
+  // Compute RMS envelope in dB
+  const rmsEnvelope: number[] = [];
+  for (let i = 0; i + windowSize < mono.length; i += hopSize) {
+    let sumSq = 0;
+    for (let j = 0; j < windowSize; j++) {
+      sumSq += mono[i + j] * mono[i + j];
+    }
+    const rmsLinear = Math.sqrt(sumSq / windowSize);
+    rmsEnvelope.push(rmsLinear > 0.0001 ? dbFromLinear(rmsLinear) : -100);
+  }
+
+  // Find peaks and measure decay times
+  const decayTimes: number[] = [];
+  const hopMs = hopSize / sampleRate * 1000;
+
+  for (let i = 1; i < rmsEnvelope.length - 1; i++) {
+    // Check if this is a local peak
+    if (rmsEnvelope[i] > rmsEnvelope[i - 1] && rmsEnvelope[i] > rmsEnvelope[i + 1] && rmsEnvelope[i] > -40) {
+      const peakLevel = rmsEnvelope[i];
+      const targetLevel = peakLevel - 10; // -10dB from peak
+
+      // Find how long until we reach -10dB
+      for (let j = i + 1; j < rmsEnvelope.length; j++) {
+        if (rmsEnvelope[j] <= targetLevel) {
+          const decayMs = (j - i) * hopMs;
+          if (decayMs > 0 && decayMs < 2000) { // Reasonable decay time
+            decayTimes.push(decayMs);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  if (decayTimes.length === 0) return 0;
+
+  // Return median decay time
+  decayTimes.sort((a, b) => a - b);
+  return decayTimes[Math.floor(decayTimes.length / 2)];
 }
 
 // Enhanced clipping detection with taxonomy
@@ -232,6 +321,10 @@ export function computeDynamics(channels: Float32Array[], sampleRate: number = 4
   // Microdynamic contrast
   const microdynamicContrast = computeMicrodynamicContrast(mono, sampleRate);
 
+  // === NEW: Dynamic envelope characterization (1.1B) ===
+  const attackSpeedIndex = computeAttackSpeedIndex(mono, sampleRate);
+  const releaseTailMs = computeReleaseTailMs(mono, sampleRate);
+
   return {
     peakDBFS: peakDB,
     rmsDBFS: rmsDB,
@@ -246,7 +339,10 @@ export function computeDynamics(channels: Float32Array[], sampleRate: number = 4
     clipDensityPerMinute: clippingAnalysis.clipDensityPerMinute,
     worstClipTimestamps: clippingAnalysis.worstClipTimestamps,
     transientDensity,
-    microdynamicContrast
+    microdynamicContrast,
+    // NEW fields
+    attackSpeedIndex,
+    releaseTailMs
   };
 }
 
@@ -274,6 +370,13 @@ export interface StereoOut {
 
   // Phase anomalies
   lowEndPhaseIssues: boolean | null;
+
+  // === NEW: Energy-aware correlation (1.3A) ===
+  correlationEnergyWeighted: number | null;
+
+  // === NEW: Stereo asymmetry (1.3B) ===
+  spectralAsymmetryHz: number | null; // positive = right brighter
+  spectralAsymmetryNote: string | null;
 }
 
 // Compute time-resolved correlation
@@ -346,6 +449,134 @@ function computeBandWidth(
   return midRms > 0 ? clamp((sideRms / midRms) * 100, 0, 300) : 0;
 }
 
+// === NEW: Energy-aware correlation (1.3A) ===
+// Correlation weighted by energy (ignores quiet sections below threshold)
+function computeEnergyWeightedCorrelation(
+  L: Float32Array,
+  R: Float32Array,
+  sampleRate: number
+): number {
+  const windowMs = 200;
+  const windowSize = Math.floor(sampleRate * windowMs / 1000);
+  const hopSize = Math.floor(windowSize / 2);
+  const loudnessThresholdLinear = 0.01; // ~-40 dB threshold
+
+  let weightedCorrSum = 0;
+  let totalWeight = 0;
+
+  for (let pos = 0; pos + windowSize < L.length; pos += hopSize) {
+    let sumL = 0, sumR = 0, sumLL = 0, sumRR = 0, sumLR = 0;
+    let energy = 0;
+
+    for (let i = pos; i < pos + windowSize; i++) {
+      sumL += L[i]; sumR += R[i];
+      sumLL += L[i] * L[i]; sumRR += R[i] * R[i];
+      sumLR += L[i] * R[i];
+      energy += L[i] * L[i] + R[i] * R[i];
+    }
+
+    const n = windowSize;
+    const rmsEnergy = Math.sqrt(energy / (n * 2));
+
+    // Skip quiet windows
+    if (rmsEnergy < loudnessThresholdLinear) continue;
+
+    const meanL = sumL / n, meanR = sumR / n;
+    const cov = sumLR / n - meanL * meanR;
+    const varL = sumLL / n - meanL * meanL;
+    const varR = sumRR / n - meanR * meanR;
+    const corr = (varL > 0 && varR > 0) ? cov / Math.sqrt(varL * varR) : 0;
+
+    // Weight by energy
+    const weight = rmsEnergy;
+    weightedCorrSum += corr * weight;
+    totalWeight += weight;
+  }
+
+  return totalWeight > 0 ? weightedCorrSum / totalWeight : 0;
+}
+
+// === NEW: Stereo asymmetry (1.3B) ===
+// Compute spectral centroid difference between L and R channels
+function computeSpectralAsymmetry(
+  L: Float32Array,
+  R: Float32Array,
+  sampleRate: number
+): { asymmetryHz: number; note: string | null } {
+  const fftSize = 4096;
+  const numFrames = 20;
+  const n = L.length;
+
+  if (n < fftSize) return { asymmetryHz: 0, note: null };
+
+  const freqResolution = sampleRate / fftSize;
+  let totalCentroidL = 0;
+  let totalCentroidR = 0;
+  let validFrames = 0;
+
+  const frameSpacing = Math.floor((n - fftSize) / numFrames);
+
+  for (let frame = 0; frame < numFrames; frame++) {
+    const start = frame * frameSpacing;
+    if (start + fftSize > n) break;
+
+    // Compute centroid for L channel
+    const centroidL = computeChannelCentroid(L, start, fftSize, sampleRate);
+    const centroidR = computeChannelCentroid(R, start, fftSize, sampleRate);
+
+    if (centroidL > 0 && centroidR > 0) {
+      totalCentroidL += centroidL;
+      totalCentroidR += centroidR;
+      validFrames++;
+    }
+  }
+
+  if (validFrames === 0) return { asymmetryHz: 0, note: null };
+
+  const avgCentroidL = totalCentroidL / validFrames;
+  const avgCentroidR = totalCentroidR / validFrames;
+  const asymmetryHz = avgCentroidR - avgCentroidL; // positive = right brighter
+
+  // Generate note if significant asymmetry (>200Hz difference)
+  let note: string | null = null;
+  if (Math.abs(asymmetryHz) > 200) {
+    if (asymmetryHz > 0) {
+      note = "Right channel brighter than left — may cause headphone fatigue";
+    } else {
+      note = "Left channel brighter than right — may cause headphone fatigue";
+    }
+  }
+
+  return { asymmetryHz, note };
+}
+
+// Helper: compute spectral centroid for a single channel segment
+function computeChannelCentroid(channel: Float32Array, start: number, fftSize: number, sampleRate: number): number {
+  const real = new Float32Array(fftSize);
+  const imag = new Float32Array(fftSize);
+  const freqResolution = sampleRate / fftSize;
+
+  for (let i = 0; i < fftSize; i++) {
+    const window = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / fftSize);
+    real[i] = channel[start + i] * window;
+    imag[i] = 0;
+  }
+
+  fft(real, imag);
+
+  let totalEnergy = 0;
+  let weightedSum = 0;
+
+  for (let k = 1; k < fftSize / 2; k++) {
+    const mag = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
+    const freq = k * freqResolution;
+    totalEnergy += mag;
+    weightedSum += mag * freq;
+  }
+
+  return totalEnergy > 0 ? weightedSum / totalEnergy : 0;
+}
+
 // Detect mono downmix impact (phase cancellation)
 function computeMonoDownmixImpact(
   L: Float32Array,
@@ -407,7 +638,8 @@ export function computeStereo(channels: Float32Array[], sampleRate: number): Ste
       subBassMonoCompatible: null, balanceDB: null, correlationMean: null,
       correlationWorst1Pct: null, worstCorrelationTimestamps: [],
       lowBandWidthPct: null, presenceBandWidthPct: null, airBandWidthPct: null,
-      monoLoudnessDiffDB: null, worstCancellationTimestamps: [], lowEndPhaseIssues: null
+      monoLoudnessDiffDB: null, worstCancellationTimestamps: [], lowEndPhaseIssues: null,
+      correlationEnergyWeighted: null, spectralAsymmetryHz: null, spectralAsymmetryNote: null
     };
   }
 
@@ -475,6 +707,12 @@ export function computeStereo(channels: Float32Array[], sampleRate: number): Ste
   // Low-end phase issues (correlation < 0.5 in sub-bass region)
   const lowEndPhaseIssues = subBassCorr < 0.5;
 
+  // === NEW: Energy-aware correlation (1.3A) ===
+  const correlationEnergyWeighted = computeEnergyWeightedCorrelation(L, R, sampleRate);
+
+  // === NEW: Stereo asymmetry (1.3B) ===
+  const asymmetry = computeSpectralAsymmetry(L, R, sampleRate);
+
   return {
     midEnergyDB: midDB,
     sideEnergyDB: sideDB,
@@ -490,7 +728,11 @@ export function computeStereo(channels: Float32Array[], sampleRate: number): Ste
     airBandWidthPct,
     monoLoudnessDiffDB: monoImpact.loudnessDiffDB,
     worstCancellationTimestamps: monoImpact.worstCancellationTimestamps,
-    lowEndPhaseIssues
+    lowEndPhaseIssues,
+    // NEW fields
+    correlationEnergyWeighted,
+    spectralAsymmetryHz: asymmetry.asymmetryHz,
+    spectralAsymmetryNote: asymmetry.note
   };
 }
 
@@ -587,6 +829,141 @@ export interface SpectralOut {
     presence: number;
     brilliance: number;
   };
+
+  // === NEW: Perceptual weighting (1.4A) ===
+  harshnessIndexWeighted: number;
+  sibilanceIndexWeighted: number;
+  spectralTiltWeightedDBPerOctave: number;
+
+  // === NEW: Spectral balance targets (1.4B) ===
+  spectralBalanceStatus: "bright" | "balanced" | "dark";
+  spectralBalanceNote: string | null;
+}
+
+// === NEW: A-weighting curve (1.4A) ===
+// Returns A-weighting factor in dB at given frequency
+function aWeighting(freq: number): number {
+  if (freq < 20) return -80;
+  const f2 = freq * freq;
+  const f4 = f2 * f2;
+
+  // A-weighting formula from IEC 61672-1
+  const num = 12194 * 12194 * f4;
+  const den = (f2 + 20.6 * 20.6) * Math.sqrt((f2 + 107.7 * 107.7) * (f2 + 737.9 * 737.9)) * (f2 + 12194 * 12194);
+
+  if (den === 0) return -80;
+  const ra = num / den;
+  return 20 * Math.log10(ra) + 2.0; // +2.0 for normalization at 1kHz
+}
+
+// Compute spectral balance status (1.4B)
+function computeSpectralBalanceStatus(
+  tilt: number,
+  harshness: number,
+  centroid: number
+): { status: "bright" | "balanced" | "dark"; note: string | null } {
+  let brightnessScore = 0;
+
+  // Tilt contribution (ideal: -2 to -4 dB/oct)
+  if (tilt > 0) brightnessScore += 2;
+  else if (tilt > -2) brightnessScore += 1;
+  else if (tilt < -5) brightnessScore -= 1;
+  else if (tilt < -7) brightnessScore -= 2;
+
+  // Harshness contribution (ideal: <25%)
+  if (harshness > 35) brightnessScore += 1;
+  else if (harshness < 15) brightnessScore -= 1;
+
+  // Centroid contribution (typical: 1500-3500 Hz)
+  if (centroid > 4000) brightnessScore += 1;
+  else if (centroid < 1200) brightnessScore -= 1;
+
+  let status: "bright" | "balanced" | "dark";
+  let note: string | null = null;
+
+  if (brightnessScore >= 2) {
+    status = "bright";
+    note = "Brighter than typical — may fatigue on extended listening";
+  } else if (brightnessScore <= -2) {
+    status = "dark";
+    note = "Darker than typical — may lack presence or clarity";
+  } else {
+    status = "balanced";
+  }
+
+  return { status, note };
+}
+
+// Compute A-weighted harshness (1.4A)
+function computeWeightedHarshness(magnitudes: Float32Array, freqResolution: number): number {
+  let weightedHarsh = 0;
+  let weightedTotal = 0;
+
+  for (let k = 1; k < magnitudes.length; k++) {
+    const freq = k * freqResolution;
+    const weight = Math.pow(10, aWeighting(freq) / 20);
+    const weightedMag = magnitudes[k] * weight;
+
+    if (freq >= 2000 && freq <= 5000) {
+      weightedHarsh += weightedMag * weightedMag;
+    }
+    if (freq >= 100 && freq <= 10000) {
+      weightedTotal += weightedMag * weightedMag;
+    }
+  }
+
+  return weightedTotal > 0 ? (weightedHarsh / weightedTotal) * 100 : 0;
+}
+
+// Compute A-weighted sibilance (1.4A)
+function computeWeightedSibilance(magnitudes: Float32Array, freqResolution: number): number {
+  let weightedSib = 0;
+  let weightedTotal = 0;
+
+  for (let k = 1; k < magnitudes.length; k++) {
+    const freq = k * freqResolution;
+    const weight = Math.pow(10, aWeighting(freq) / 20);
+    const weightedMag = magnitudes[k] * weight;
+
+    if (freq >= 5000 && freq <= 10000) {
+      weightedSib += weightedMag * weightedMag;
+    }
+    if (freq >= 100 && freq <= 15000) {
+      weightedTotal += weightedMag * weightedMag;
+    }
+  }
+
+  return weightedTotal > 0 ? (weightedSib / weightedTotal) * 100 : 0;
+}
+
+// Compute A-weighted spectral tilt (1.4A)
+function computeWeightedSpectralTilt(magnitudes: Float32Array, freqResolution: number): number {
+  const minBin = Math.max(1, Math.floor(100 / freqResolution));
+  const maxBin = Math.min(magnitudes.length - 1, Math.floor(10000 / freqResolution));
+
+  if (maxBin <= minBin) return 0;
+
+  let sumX = 0, sumY = 0, sumXX = 0, sumXY = 0;
+  let count = 0;
+
+  for (let k = minBin; k <= maxBin; k++) {
+    const freq = k * freqResolution;
+    if (freq < 100 || magnitudes[k] <= 0) continue;
+
+    const weight = Math.pow(10, aWeighting(freq) / 20);
+    const logFreq = Math.log2(freq);
+    const magDB = 20 * Math.log10(magnitudes[k] * weight + 1e-10);
+
+    sumX += logFreq;
+    sumY += magDB;
+    sumXX += logFreq * logFreq;
+    sumXY += logFreq * magDB;
+    count++;
+  }
+
+  if (count < 2) return 0;
+
+  return (count * sumXY - sumX * sumY) / (count * sumXX - sumX * sumX);
 }
 
 // Cooley-Tukey FFT (radix-2, in-place)
@@ -724,7 +1101,7 @@ export function computeBandEnergiesMono(mono: Float32Array, fs: number): Spectra
   const highEnergy = bandRmsDB(mono, 2000, 8000, fs);
 
   // Compute spectral features using FFT
-  const { centroid, rolloff, tilt, flatness, harshness, sibilance } = computeSpectralFeatures(mono, fs);
+  const spectralFeatures = computeSpectralFeatures(mono, fs);
 
   // Crest by band
   const crestByBand = {
@@ -740,16 +1117,23 @@ export function computeBandEnergiesMono(mono: Float32Array, fs: number): Spectra
     highFreqEnergy8k16kDB: rmsDB(hf),
     sibilanceEnergy4k10kDB: rmsDB(sib),
     subBassEnergy20_80DB: rmsDB(sub),
-    spectralCentroidHz: centroid,
-    spectralRolloffHz: rolloff,
-    spectralTiltDBPerOctave: tilt,
+    spectralCentroidHz: spectralFeatures.centroid,
+    spectralRolloffHz: spectralFeatures.rolloff,
+    spectralTiltDBPerOctave: spectralFeatures.tilt,
     bassToMidRatioDB: bassEnergy - midEnergy,
     midToHighRatioDB: midEnergy - highEnergy,
-    harshnessIndex: harshness,
-    sibilanceIndex: sibilance,
-    spectralFlatness: flatness,
+    harshnessIndex: spectralFeatures.harshness,
+    sibilanceIndex: spectralFeatures.sibilance,
+    spectralFlatness: spectralFeatures.flatness,
     harmonicToNoiseRatio: 0, // Placeholder - complex to compute accurately
-    crestByBand
+    crestByBand,
+    // NEW: A-weighted metrics (1.4A)
+    harshnessIndexWeighted: spectralFeatures.harshnessWeighted,
+    sibilanceIndexWeighted: spectralFeatures.sibilanceWeighted,
+    spectralTiltWeightedDBPerOctave: spectralFeatures.tiltWeighted,
+    // NEW: Spectral balance status (1.4B)
+    spectralBalanceStatus: spectralFeatures.balanceStatus,
+    spectralBalanceNote: spectralFeatures.balanceNote
   };
 }
 
@@ -760,13 +1144,24 @@ function computeSpectralFeatures(mono: Float32Array, fs: number): {
   flatness: number;
   harshness: number;
   sibilance: number;
+  // NEW: A-weighted metrics (1.4A)
+  harshnessWeighted: number;
+  sibilanceWeighted: number;
+  tiltWeighted: number;
+  // NEW: Balance status (1.4B)
+  balanceStatus: "bright" | "balanced" | "dark";
+  balanceNote: string | null;
 } {
   const fftSize = 4096; // Larger for better frequency resolution
   const numFramesToAnalyze = 30;
   const totalSamples = mono.length;
 
   if (totalSamples < fftSize) {
-    return { centroid: 0, rolloff: 0, tilt: 0, flatness: 0, harshness: 0, sibilance: 0 };
+    return {
+      centroid: 0, rolloff: 0, tilt: 0, flatness: 0, harshness: 0, sibilance: 0,
+      harshnessWeighted: 0, sibilanceWeighted: 0, tiltWeighted: 0,
+      balanceStatus: "balanced", balanceNote: null
+    };
   }
 
   const freqBins = fftSize / 2;
@@ -835,12 +1230,26 @@ function computeSpectralFeatures(mono: Float32Array, fs: number): {
   const harshness = computeHarshnessIndex(avgMagnitudes, freqResolution);
   const sibilance = computeSibilanceIndex(avgMagnitudes, freqResolution);
 
+  // NEW: A-weighted metrics (1.4A)
+  const harshnessWeighted = computeWeightedHarshness(avgMagnitudes, freqResolution);
+  const sibilanceWeighted = computeWeightedSibilance(avgMagnitudes, freqResolution);
+  const tiltWeighted = computeWeightedSpectralTilt(avgMagnitudes, freqResolution);
+
+  // NEW: Spectral balance status (1.4B)
+  const centroid = validFrames > 0 ? totalCentroid / validFrames : 0;
+  const balance = computeSpectralBalanceStatus(tilt, harshness, centroid);
+
   return {
-    centroid: validFrames > 0 ? totalCentroid / validFrames : 0,
+    centroid,
     rolloff: validFrames > 0 ? totalRolloff / validFrames : 0,
     tilt,
     flatness,
     harshness,
-    sibilance
+    sibilance,
+    harshnessWeighted,
+    sibilanceWeighted,
+    tiltWeighted,
+    balanceStatus: balance.status,
+    balanceNote: balance.note
   };
 }

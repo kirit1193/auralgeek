@@ -354,10 +354,138 @@ function pearsonCorrelation(a: number[], b: number[]): number {
   return den !== 0 ? num / den : 0;
 }
 
+// === NEW: Compute tempo drift index (1.5) ===
+// Std-dev of beat intervals
+function computeTempoDriftIndex(mono: Float32Array, sampleRate: number, bpm: number): {
+  driftIndex: number;
+  note: string | null;
+} {
+  const hopSize = Math.floor(sampleRate / 100); // 10ms hops
+  const windowSize = Math.floor(sampleRate * 0.023);
+  const envelope = computeOnsetEnvelope(mono, windowSize, hopSize);
+
+  // Find onset peaks
+  const peaks: number[] = [];
+  for (let i = 1; i < envelope.length - 1; i++) {
+    if (envelope[i] > 0.2 && envelope[i] > envelope[i - 1] && envelope[i] > envelope[i + 1]) {
+      peaks.push(i);
+    }
+  }
+
+  if (peaks.length < 4) {
+    return { driftIndex: 0, note: null };
+  }
+
+  // Compute inter-onset intervals
+  const intervals: number[] = [];
+  for (let i = 1; i < peaks.length; i++) {
+    intervals.push(peaks[i] - peaks[i - 1]);
+  }
+
+  // Compute expected interval from BPM
+  const effectiveSampleRate = sampleRate / hopSize;
+  const expectedInterval = (60 * effectiveSampleRate) / bpm;
+
+  // Filter intervals that are close to expected (within 2x)
+  const relevantIntervals = intervals.filter(
+    int => int > expectedInterval * 0.5 && int < expectedInterval * 2
+  );
+
+  if (relevantIntervals.length < 3) {
+    return { driftIndex: 0, note: null };
+  }
+
+  // Compute std-dev of intervals
+  const mean = relevantIntervals.reduce((a, b) => a + b, 0) / relevantIntervals.length;
+  const variance = relevantIntervals.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / relevantIntervals.length;
+  const stdDev = Math.sqrt(variance);
+
+  // Convert to percentage of expected interval
+  const driftIndex = (stdDev / expectedInterval) * 100;
+
+  // Generate note
+  let note: string | null = null;
+  if (driftIndex > 15) {
+    note = "Tempo fluctuates significantly — likely live performance or tempo changes";
+  } else if (driftIndex > 5) {
+    note = "Tempo varies slightly — likely live or humanized";
+  }
+
+  return { driftIndex, note };
+}
+
+// === NEW: Compute key stability (1.5) ===
+// Percentage of windows agreeing with primary key
+function computeKeyStability(mono: Float32Array, sampleRate: number, primaryKey: string): {
+  stabilityPct: number;
+  note: string | null;
+} {
+  const windowSize = Math.floor(sampleRate * 2); // 2-second windows
+  const hopSize = Math.floor(sampleRate); // 1-second hop
+  const numWindows = Math.floor((mono.length - windowSize) / hopSize);
+
+  if (numWindows < 2) {
+    return { stabilityPct: 100, note: "Key center stable" };
+  }
+
+  let agreeingWindows = 0;
+
+  for (let w = 0; w < numWindows; w++) {
+    const start = w * hopSize;
+    const windowMono = mono.slice(start, start + windowSize);
+
+    // Compute chromagram for this window
+    const chromagram = computeChromagram(windowMono, sampleRate);
+
+    // Find best key for this window
+    let bestKey = "";
+    let bestScore = -Infinity;
+
+    for (let i = 0; i < 12; i++) {
+      const rotated = rotateArray(chromagram, i);
+      const majorCorr = pearsonCorrelation(rotated, MAJOR_PROFILE);
+      const minorCorr = pearsonCorrelation(rotated, MINOR_PROFILE);
+
+      if (majorCorr > bestScore) {
+        bestScore = majorCorr;
+        bestKey = `${KEY_NAMES[i]} Major`;
+      }
+      if (minorCorr > bestScore) {
+        bestScore = minorCorr;
+        bestKey = `${KEY_NAMES[i]} Minor`;
+      }
+    }
+
+    if (bestKey === primaryKey) {
+      agreeingWindows++;
+    }
+  }
+
+  const stabilityPct = Math.round((agreeingWindows / numWindows) * 100);
+
+  // Generate note
+  let note: string | null = null;
+  if (stabilityPct >= 80) {
+    note = "Key center stable throughout";
+  } else if (stabilityPct >= 50) {
+    note = "Some key variations — may contain modulations";
+  } else {
+    note = "Frequent key changes or ambiguous tonality";
+  }
+
+  return { stabilityPct, note };
+}
+
 // Compute musical features
 export function computeMusicalFeatures(mono: Float32Array, sampleRate: number): MusicalFeatures {
   const bpmResult = detectBPM(mono, sampleRate);
   const keyResult = detectKey(mono, sampleRate);
+
+  // NEW: Compute tempo drift (1.5)
+  const tempoDrift = computeTempoDriftIndex(mono, sampleRate, bpmResult.primary);
+
+  // NEW: Compute key stability (1.5)
+  const keyStability = computeKeyStability(mono, sampleRate, keyResult.primary);
 
   return {
     bpmCandidates: bpmResult.candidates,
@@ -368,7 +496,12 @@ export function computeMusicalFeatures(mono: Float32Array, sampleRate: number): 
     keyCandidates: keyResult.candidates,
     keyPrimary: keyResult.primary,
     keyConfidence: keyResult.confidence,
-    tonalnessScore: keyResult.tonalnessScore
+    tonalnessScore: keyResult.tonalnessScore,
+    // NEW fields (1.5)
+    tempoDriftIndex: tempoDrift.driftIndex,
+    tempoDriftNote: tempoDrift.note,
+    keyStabilityPct: keyStability.stabilityPct,
+    keyStabilityNote: keyStability.note
   };
 }
 

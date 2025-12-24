@@ -25,6 +25,17 @@ export interface LoudnessResult {
   loudestSegmentTime: number;
   quietestSegmentTime: number;
   abruptChanges: { time: number; deltaLU: number }[];
+
+  // === NEW: Macro-dynamics (1.1A) ===
+  loudnessSlopeDBPerMin: number;
+  loudnessVolatilityLU: number;
+
+  // === NEW: Peak clustering (1.2A) ===
+  peakClusteringType: "sporadic" | "persistent" | "mixed";
+  peakClusterCount: number;
+
+  // === NEW: TP-to-loudness at loudest section (1.2B) ===
+  tpToLoudnessAtPeak: number;
 }
 
 // ITU BS.1770 K-weighting pre-filter coefficients (48kHz)
@@ -260,6 +271,102 @@ function percentile(arr: number[], p: number): number {
   return sorted[Math.min(idx, sorted.length - 1)];
 }
 
+// === NEW: Compute loudness slope (1.1A) ===
+// Linear regression on short-term loudness over time
+function computeLoudnessSlope(
+  shortTermValues: number[],
+  shortTermTimes: number[]
+): number {
+  // Filter valid values
+  const validPairs: { time: number; value: number }[] = [];
+  for (let i = 0; i < shortTermValues.length; i++) {
+    if (isFinite(shortTermValues[i]) && shortTermValues[i] > -70) {
+      validPairs.push({ time: shortTermTimes[i], value: shortTermValues[i] });
+    }
+  }
+
+  if (validPairs.length < 2) return 0;
+
+  // Linear regression
+  const n = validPairs.length;
+  let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+  for (const pair of validPairs) {
+    sumX += pair.time;
+    sumY += pair.value;
+    sumXY += pair.time * pair.value;
+    sumXX += pair.time * pair.time;
+  }
+
+  const denom = n * sumXX - sumX * sumX;
+  if (denom === 0) return 0;
+
+  const slope = (n * sumXY - sumX * sumY) / denom; // dB per second
+  return slope * 60; // Convert to dB per minute
+}
+
+// === NEW: Compute loudness volatility (1.1A) ===
+// Std-dev of short-term LUFS after gating
+function computeLoudnessVolatility(shortTermValues: number[]): number {
+  const validValues = shortTermValues.filter(v => isFinite(v) && v > -70);
+  if (validValues.length < 2) return 0;
+
+  const mean = validValues.reduce((a, b) => a + b, 0) / validValues.length;
+  const variance = validValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / validValues.length;
+  return Math.sqrt(variance);
+}
+
+// === NEW: Analyze peak clustering (1.2A) ===
+// Determines if peaks are sporadic (transients) or persistent (limiter abuse)
+function analyzePeakClustering(
+  channels: Float32Array[],
+  sampleRate: number,
+  threshold: number = 0.95 // Linear threshold for "high" samples
+): { type: "sporadic" | "persistent" | "mixed"; clusterCount: number } {
+  const windowMs = 50; // 50ms window for clustering
+  const windowSize = Math.floor(sampleRate * windowMs / 1000);
+  const hopSize = Math.floor(windowSize / 2);
+  const n = channels[0].length;
+
+  let highPeakWindows = 0;
+  let totalWindows = 0;
+  let clusterCount = 0;
+  let inCluster = false;
+
+  for (let pos = 0; pos + windowSize < n; pos += hopSize) {
+    let maxPeak = 0;
+    for (const ch of channels) {
+      for (let i = pos; i < pos + windowSize; i++) {
+        const abs = Math.abs(ch[i]);
+        if (abs > maxPeak) maxPeak = abs;
+      }
+    }
+
+    totalWindows++;
+    if (maxPeak >= threshold) {
+      highPeakWindows++;
+      if (!inCluster) {
+        clusterCount++;
+        inCluster = true;
+      }
+    } else {
+      inCluster = false;
+    }
+  }
+
+  if (totalWindows === 0) return { type: "sporadic", clusterCount: 0 };
+
+  const highPeakRatio = highPeakWindows / totalWindows;
+
+  // Classify based on ratio and cluster count
+  if (highPeakRatio > 0.3) {
+    return { type: "persistent", clusterCount };
+  } else if (highPeakRatio < 0.05 && clusterCount < 10) {
+    return { type: "sporadic", clusterCount };
+  } else {
+    return { type: "mixed", clusterCount };
+  }
+}
+
 export function computeLoudness(sampleRate: number, channels: Float32Array[]): LoudnessResult {
   // Use ebur128-wasm for integrated loudness and true peak (gold standard)
   let integratedLUFS: number;
@@ -272,7 +379,7 @@ export function computeLoudness(sampleRate: number, channels: Float32Array[]): L
     const left = channels[0];
     const right = channels[1];
     integratedLUFS = ebur128_integrated_stereo(sampleRate, left, right);
-    const tpArr = ebur128_true_peak_stereo(sampleRate, left, right);
+    const tpArr = ebur128_true_peak_stereo(sampleRate, left, right) as unknown as number[];
     tpLinear = Math.max(Number(tpArr[0] ?? 0), Number(tpArr[1] ?? 0));
   }
 
@@ -345,6 +452,18 @@ export function computeLoudness(sampleRate: number, channels: Float32Array[]): L
   // Detect abrupt changes
   const abruptChanges = findAbruptChanges(shortTermValues, shortTermTimes);
 
+  // === NEW: Compute macro-dynamics (1.1A) ===
+  const loudnessSlopeDBPerMin = computeLoudnessSlope(shortTermValues, shortTermTimes);
+  const loudnessVolatilityLU = computeLoudnessVolatility(shortTermValues);
+
+  // === NEW: Peak clustering (1.2A) ===
+  const peakClustering = analyzePeakClustering(channels, sampleRate);
+
+  // === NEW: TP-to-loudness at loudest section (1.2B) ===
+  // Find the short-term loudness at the loudest segment
+  const loudestSectionLUFS = shortTermValues[loudestIdx] ?? integratedLUFS;
+  const tpToLoudnessAtPeak = truePeakDBTP - loudestSectionLUFS;
+
   return {
     integratedLUFS,
     integratedUngatedLUFS,
@@ -362,6 +481,12 @@ export function computeLoudness(sampleRate: number, channels: Float32Array[]): L
     shortTermTimeline,
     loudestSegmentTime,
     quietestSegmentTime,
-    abruptChanges
+    abruptChanges,
+    // NEW fields
+    loudnessSlopeDBPerMin,
+    loudnessVolatilityLU,
+    peakClusteringType: peakClustering.type,
+    peakClusterCount: peakClustering.clusterCount,
+    tpToLoudnessAtPeak
   };
 }

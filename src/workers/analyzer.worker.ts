@@ -211,7 +211,15 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
           shortTermTimeline: loud.shortTermTimeline,
           loudestSegmentTime: loud.loudestSegmentTime,
           quietestSegmentTime: loud.quietestSegmentTime,
-          abruptChanges: loud.abruptChanges
+          abruptChanges: loud.abruptChanges,
+          // NEW: Macro-dynamics (1.1A)
+          loudnessSlopeDBPerMin: loud.loudnessSlopeDBPerMin,
+          loudnessVolatilityLU: loud.loudnessVolatilityLU,
+          // NEW: Peak clustering (1.2A)
+          peakClusteringType: loud.peakClusteringType,
+          peakClusterCount: loud.peakClusterCount,
+          // NEW: TP-to-loudness at peak (1.2B)
+          tpToLoudnessAtPeak: loud.tpToLoudnessAtPeak
         },
         dynamics: {
           peakDBFS: dyn.peakDBFS,
@@ -229,7 +237,10 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
           clippedSampleCount: dyn.clippedSampleCount,
           clipEventCount: dyn.clipEventCount,
           clipDensityPerMinute: dyn.clipDensityPerMinute,
-          worstClipTimestamps: dyn.worstClipTimestamps
+          worstClipTimestamps: dyn.worstClipTimestamps,
+          // NEW: Attack/release indices (1.1B)
+          attackSpeedIndex: dyn.attackSpeedIndex,
+          releaseTailMs: dyn.releaseTailMs
         },
         spectral: {
           spectralCentroidHz: bands.spectralCentroidHz,
@@ -244,7 +255,14 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
           sibilanceIndex: bands.sibilanceIndex,
           spectralFlatness: bands.spectralFlatness,
           harmonicToNoiseRatio: bands.harmonicToNoiseRatio,
-          crestByBand: bands.crestByBand
+          crestByBand: bands.crestByBand,
+          // NEW: A-weighted metrics (1.4A)
+          harshnessIndexWeighted: bands.harshnessIndexWeighted,
+          sibilanceIndexWeighted: bands.sibilanceIndexWeighted,
+          spectralTiltWeightedDBPerOctave: bands.spectralTiltWeightedDBPerOctave,
+          // NEW: Spectral balance (1.4B)
+          spectralBalanceStatus: bands.spectralBalanceStatus,
+          spectralBalanceNote: bands.spectralBalanceNote
         },
         stereo: {
           stereoWidthPct: st.stereoWidthPct,
@@ -261,7 +279,12 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
           airBandWidthPct: st.airBandWidthPct,
           monoLoudnessDiffDB: st.monoLoudnessDiffDB,
           worstCancellationTimestamps: st.worstCancellationTimestamps,
-          lowEndPhaseIssues: st.lowEndPhaseIssues
+          lowEndPhaseIssues: st.lowEndPhaseIssues,
+          // NEW: Energy-aware correlation (1.3A)
+          correlationEnergyWeighted: st.correlationEnergyWeighted,
+          // NEW: Stereo asymmetry (1.3B)
+          spectralAsymmetryHz: st.spectralAsymmetryHz,
+          spectralAsymmetryNote: st.spectralAsymmetryNote
         },
         aiArtifacts: {
           shimmerDetected: false,
@@ -334,6 +357,134 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
 
     const distributionReady = tracks.every(t => t.distributionReady);
 
+    // === NEW: Album-Level Intelligence (3.1-3.3) ===
+
+    // 3.1 Album loudness cohesion
+    const albumLoudnessSpread = lufsValues.length >= 2 ? (maxLUFS! - minLUFS!) : 0;
+    let sequenceConsistencyScore = 100;
+    let sequenceConsistencyNote: string | undefined;
+    if (lufsValues.length >= 2) {
+      let maxJump = 0;
+      let worstJumpIdx = 0;
+      for (let i = 1; i < lufsValues.length; i++) {
+        const jump = Math.abs(lufsValues[i] - lufsValues[i - 1]);
+        if (jump > maxJump) {
+          maxJump = jump;
+          worstJumpIdx = i;
+        }
+      }
+      // Penalize based on max jump (3 LU is noticeable, 6 LU is large)
+      sequenceConsistencyScore = Math.max(0, Math.round(100 - maxJump * 10));
+      if (maxJump > 3) {
+        sequenceConsistencyNote = `Large loudness jump between tracks ${worstJumpIdx} and ${worstJumpIdx + 1} (${maxJump.toFixed(1)} LU)`;
+      }
+    }
+
+    // 3.2 Album spectral fingerprint
+    const spectralFingerprint = {
+      avgTilt: tiltValues.length ? avg(tiltValues) : 0,
+      avgHarshness: harshValues.length ? avg(harshValues) : 0,
+      avgWidth: widthValues.length ? avg(widthValues) : 0
+    };
+
+    // Find spectral deviating tracks
+    const spectralDeviatingTracks: number[] = [];
+    let spectralNote: string | undefined;
+    if (tracks.length >= 3) {
+      const avgTilt = spectralFingerprint.avgTilt;
+      const avgHarsh = spectralFingerprint.avgHarshness;
+      const avgWidth = spectralFingerprint.avgWidth;
+
+      for (const t of tracks) {
+        const tilt = t.spectral.spectralTiltDBPerOctave ?? avgTilt;
+        const harsh = t.spectral.harshnessIndex ?? avgHarsh;
+        const width = t.stereo.stereoWidthPct ?? avgWidth;
+
+        const tiltDev = Math.abs(tilt - avgTilt);
+        const harshDev = Math.abs(harsh - avgHarsh);
+        const widthDev = Math.abs(width - avgWidth);
+
+        // Flag if significantly different from album average
+        if (tiltDev > 2 || harshDev > 15 || widthDev > 25) {
+          spectralDeviatingTracks.push(t.trackNumber);
+        }
+      }
+
+      if (spectralDeviatingTracks.length > 0 && spectralDeviatingTracks.length <= 3) {
+        spectralNote = `Track${spectralDeviatingTracks.length > 1 ? 's' : ''} ${spectralDeviatingTracks.join(', ')} deviate${spectralDeviatingTracks.length === 1 ? 's' : ''} significantly from album average`;
+      }
+    }
+
+    const spectralConsistencyScore = Math.max(0, Math.round(100 - spectralDeviatingTracks.length * 15));
+
+    // 3.3 Outlier detection
+    const outlierTracks: { trackNumber: number; reason: string }[] = [];
+    if (tracks.length >= 3) {
+      const medianLUFS = lufsValues.length ? lufsValues.sort((a, b) => a - b)[Math.floor(lufsValues.length / 2)] : avgLUFS;
+      const medianTilt = tiltValues.length ? tiltValues.sort((a, b) => a - b)[Math.floor(tiltValues.length / 2)] : 0;
+
+      for (const t of tracks) {
+        const lufs = t.loudness.integratedLUFS ?? medianLUFS;
+        const tilt = t.spectral.spectralTiltDBPerOctave ?? medianTilt;
+        const reasons: string[] = [];
+
+        if (Math.abs(lufs - medianLUFS) > 4) {
+          reasons.push(lufs > medianLUFS ? 'louder' : 'quieter');
+        }
+        if (Math.abs(tilt - medianTilt) > 3) {
+          reasons.push(tilt > medianTilt ? 'brighter' : 'darker');
+        }
+
+        if (reasons.length > 0) {
+          outlierTracks.push({
+            trackNumber: t.trackNumber,
+            reason: `Significantly ${reasons.join(' and ')} than album median`
+          });
+        }
+      }
+    }
+
+    // Distribution ready note
+    let distributionReadyNote: string | undefined;
+    if (distributionReady) {
+      if (avgLUFS > -14) {
+        distributionReadyNote = "Distribution Ready (with normalization)";
+      } else {
+        distributionReadyNote = "Distribution Ready";
+      }
+    } else {
+      distributionReadyNote = "Address issues before distribution";
+    }
+
+    // Score breakdown
+    const scoreBreakdown = {
+      loudness: Math.round(avg(tracks.map(t => {
+        const lufs = t.loudness.integratedLUFS ?? -14;
+        if (lufs > -9 || lufs < -20) return 6;
+        if (lufs > -11 || lufs < -18) return 8;
+        return 10;
+      }))),
+      dynamics: Math.round(avg(tracks.map(t => t.dynamics.hasClipping ? 5 : 10))),
+      translation: Math.round(avg(tracks.map(t => {
+        const corr = t.stereo.correlationMean ?? 0.8;
+        if (corr < 0) return 4;
+        if (corr < 0.5) return 7;
+        return 10;
+      }))),
+      spectral: Math.round(avg(tracks.map(t => {
+        const harsh = t.spectral.harshnessIndex ?? 20;
+        if (harsh > 35) return 6;
+        if (harsh > 28) return 8;
+        return 10;
+      }))),
+      streaming: Math.round(avg(tracks.map(t => {
+        const tp = t.streamingSimulation.spotify?.projectedTruePeakDBTP ?? -3;
+        if (tp > 0) return 5;
+        if (tp > -1) return 7;
+        return 10;
+      })))
+    };
+
     const album: AlbumAnalysis = {
       albumName,
       analysisDateISO: new Date().toISOString(),
@@ -378,7 +529,29 @@ self.onmessage = async (ev: MessageEvent<AnalyzeRequest>) => {
         tracksWithIssues,
         tracksWithWarnings,
         totalIssues,
-        totalWarnings
+        totalWarnings,
+
+        // Album-level intelligence (3.1-3.3)
+        albumLoudnessSpread: lufsValues.length >= 2 ? Number((maxLUFS! - minLUFS!).toFixed(1)) : undefined,
+        sequenceConsistencyScore,
+        sequenceConsistencyNote: sequenceConsistencyScore < 85 ? 'Large loudness jumps between adjacent tracks' : undefined,
+        spectralConsistencyScore,
+        spectralDeviatingTracks: spectralDeviatingTracks.length > 0 ? spectralDeviatingTracks : undefined,
+        spectralFingerprint,
+        spectralNote,
+        outlierTracks: outlierTracks.length > 0 ? outlierTracks : undefined
+      },
+      distributionReadyNote,
+      scoreBreakdown,
+      metadata: {
+        analysisVersion: '2.0.0',
+        algorithmFlags: {
+          truePeakOversamplingFactor: 4,
+          aWeightingEnabled: true,
+          energyWeightedCorrelation: true
+        },
+        sampleRate: tracks[0]?.parameters.decodedSampleRate ?? tracks[0]?.parameters.sampleRate ?? 44100,
+        browserInfo: typeof navigator !== 'undefined' ? navigator.userAgent : 'Worker'
       },
       tracks
     };

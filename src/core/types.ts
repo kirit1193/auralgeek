@@ -13,6 +13,13 @@ export interface AudioParameters {
   effectiveBitDepth?: number; // Estimated from noise floor
   overallBitrate?: number;
   isTrueStereo?: boolean; // vs dual mono
+
+  // === NEW: Source & Quality Intelligence (1.6) ===
+  // Noise floor estimation (median low-level spectral energy)
+  noiseFloorDB?: number;
+  // Codec suspicion score (combines low effective bit depth, spectral rolloff, pre-echo)
+  codecSuspicionScore?: number; // 0-100
+  codecSuspicionNote?: string; // e.g., "May indicate lossy or heavily processed source"
 }
 
 // EBU R128 / ITU BS.1770 Loudness Suite
@@ -47,6 +54,20 @@ export interface LoudnessMetrics {
   loudestSegmentTime: number | null; // seconds
   quietestSegmentTime: number | null;
   abruptChanges: { time: number; deltaLU: number }[] | null;
+
+  // === NEW: Macro-dynamics (1.1A) ===
+  // Loudness slope: positive = gets louder, negative = fades
+  loudnessSlopeDBPerMin: number | null;
+  // Loudness volatility: std-dev of short-term LUFS (distinguishes dynamic vs unstable)
+  loudnessVolatilityLU: number | null;
+
+  // === NEW: Peak clustering (1.2A) ===
+  // Whether true peak events are sporadic (transients) or persistent (limiter ceiling abuse)
+  peakClusteringType: "sporadic" | "persistent" | "mixed" | null;
+  peakClusterCount: number | null; // Number of distinct peak clusters
+
+  // === NEW: TP-to-loudness at loudest section (1.2B) ===
+  tpToLoudnessAtPeak: number | null; // TP - short-term loudness at loudest section
 }
 
 export interface DynamicsMetrics {
@@ -72,6 +93,12 @@ export interface DynamicsMetrics {
   clipEventCount: number | null; // contiguous segments
   clipDensityPerMinute: number | null;
   worstClipTimestamps: number[] | null; // top N clip events (seconds)
+
+  // === NEW: Dynamic envelope characterization (1.1B) ===
+  // Attack speed: median positive slope of RMS envelope (dB/ms)
+  attackSpeedIndex: number | null;
+  // Release tail: median decay time from peak to -10dB (ms)
+  releaseTailMs: number | null;
 }
 
 export interface SpectralAnalysis {
@@ -103,6 +130,17 @@ export interface SpectralAnalysis {
     presence: number | null; // 2-6k Hz
     brilliance: number | null; // 6-20k Hz
   } | null;
+
+  // === NEW: Perceptual weighting (1.4A) ===
+  // A-weighted versions of harshness and sibilance (more perceptually accurate)
+  harshnessIndexWeighted: number | null;
+  sibilanceIndexWeighted: number | null;
+  spectralTiltWeightedDBPerOctave: number | null;
+
+  // === NEW: Spectral balance targets (1.4B) ===
+  // "Within typical range" indicators (percentile-based references)
+  spectralBalanceStatus: "bright" | "balanced" | "dark" | null;
+  spectralBalanceNote: string | null; // e.g., "Outside common range for modern pop"
 }
 
 export interface StereoAnalysis {
@@ -129,6 +167,15 @@ export interface StereoAnalysis {
 
   // Phase anomalies (especially low end)
   lowEndPhaseIssues: boolean | null;
+
+  // === NEW: Energy-aware correlation (1.3A) ===
+  // Correlation weighted by energy (ignores quiet sections)
+  correlationEnergyWeighted: number | null;
+
+  // === NEW: Stereo asymmetry metric (1.3B) ===
+  // L/R spectral imbalance - difference in spectral centroid per channel
+  spectralAsymmetryHz: number | null; // positive = right brighter, negative = left brighter
+  spectralAsymmetryNote: string | null; // e.g., "Right channel brighter than left"
 }
 
 export interface AIArtifactAnalysis {
@@ -153,6 +200,16 @@ export interface MusicalFeatures {
   keyPrimary: string | null;
   keyConfidence: number | null; // 0-100
   tonalnessScore: number | null; // how strongly fits any key model
+
+  // === NEW: Tempo drift index (1.5) ===
+  // Std-dev of beat intervals (higher = less stable)
+  tempoDriftIndex: number | null;
+  tempoDriftNote: string | null; // e.g., "Tempo fluctuates slightly — likely live or humanized"
+
+  // === NEW: Key stability index (1.5) ===
+  // % of windows agreeing with primary key
+  keyStabilityPct: number | null;
+  keyStabilityNote: string | null; // e.g., "Key center stable throughout"
 }
 
 // Platform normalization simulation
@@ -173,6 +230,19 @@ export interface StreamingSimulation {
   recommendation: string | null; // "competitive vs dynamic" strategy
 }
 
+// === NEW: Enhanced issue/warning with severity (2.1) ===
+export interface AnalysisIssue {
+  message: string;
+  severity: number; // 0-1 (0 = minor, 1 = critical)
+  confidence: number; // 0-1 (how certain we are this is an issue)
+  category: "format" | "loudness" | "dynamics" | "stereo" | "spectral" | "streaming";
+  // Causal chaining (2.2) - optional linked causes/effects
+  causedBy?: string;
+  leadsTo?: string;
+  // Recommendation tier (2.3)
+  recommendationTier?: "safe" | "contextual" | "aggressive";
+}
+
 export interface TrackAnalysis {
   trackNumber: number;
   parameters: AudioParameters;
@@ -186,6 +256,11 @@ export interface TrackAnalysis {
   distributionReady: boolean;
   issues: string[];
   warnings: string[];
+  // === NEW: Enhanced issues with severity (2.1) ===
+  enhancedIssues?: AnalysisIssue[];
+  enhancedWarnings?: AnalysisIssue[];
+  // One-line summary of primary concern (4.4C)
+  primaryConcern?: string;
 }
 
 export interface AlbumSummary {
@@ -225,6 +300,41 @@ export interface AlbumSummary {
   tracksWithWarnings?: number;
   totalIssues?: number;
   totalWarnings?: number;
+
+  // === NEW: Album-Level Intelligence (3.1-3.3) ===
+
+  // Album loudness cohesion (3.1)
+  albumLoudnessSpread?: number; // max integrated - min integrated
+  sequenceConsistencyScore?: number; // 0-100, penalizes large jumps between adjacent tracks
+  sequenceConsistencyNote?: string; // e.g., "Large loudness jump between tracks 3 and 4"
+
+  // Album spectral fingerprint (3.2)
+  spectralConsistencyScore?: number; // 0-100
+  spectralDeviatingTracks?: number[]; // track numbers that deviate significantly
+  spectralFingerprint?: {
+    avgTilt: number;
+    avgHarshness: number;
+    avgWidth: number;
+  };
+  spectralNote?: string; // e.g., "Track 6 deviates significantly (brighter, wider)"
+
+  // Outlier detection (3.3)
+  outlierTracks?: {
+    trackNumber: number;
+    reason: string; // e.g., "significantly louder and brighter than album median"
+  }[];
+}
+
+// === NEW: Reproducibility metadata (5.2) ===
+export interface AnalysisMetadata {
+  analysisVersion: string;
+  algorithmFlags: {
+    truePeakOversamplingFactor: number;
+    aWeightingEnabled: boolean;
+    energyWeightedCorrelation: boolean;
+  };
+  browserInfo?: string;
+  sampleRate: number;
 }
 
 export interface AlbumAnalysis {
@@ -237,4 +347,19 @@ export interface AlbumAnalysis {
   distributionReady: boolean;
   summary: AlbumSummary;
   tracks: TrackAnalysis[];
+
+  // === NEW: Distribution ready nuance (4.3A) ===
+  distributionReadyNote?: string; // e.g., "Distribution Ready (with normalization)"
+
+  // === NEW: Score breakdown (4.3B) ===
+  scoreBreakdown?: {
+    loudness: number;
+    dynamics: number;
+    translation: number; // stereo/mono compatibility
+    spectral: number;
+    streaming: number;
+  };
+
+  // === NEW: Reproducibility metadata (5.2) ===
+  metadata?: AnalysisMetadata;
 }
