@@ -814,6 +814,21 @@ export class AlbumAnalyzerApp extends LitElement {
       overflow: visible; /* Allow tooltips to overflow */
     }
 
+    /* Visual hierarchy: Primary modules are more prominent */
+    .metric-module.primary {
+      border-color: var(--border-panel);
+      background: linear-gradient(180deg, var(--bg-inset) 0%, rgba(20,20,20,0.8) 100%);
+    }
+
+    /* Tertiary modules are slightly subdued */
+    .metric-module.tertiary {
+      opacity: 0.9;
+    }
+
+    .metric-module.tertiary .module-title {
+      font-size: 0.48rem;
+    }
+
     .module-title {
       font-family: 'Geist Mono', monospace;
       font-size: 0.5rem;
@@ -1063,13 +1078,16 @@ export class AlbumAnalyzerApp extends LitElement {
 
     .meter-marker {
       position: absolute;
-      top: -2px;
-      width: 3px;
-      height: 12px;
+      top: -3px;
+      width: 4px;
+      height: 14px;
       background: #fff;
-      border-radius: 1px;
+      border-radius: 2px;
       transform: translateX(-50%);
-      box-shadow: 0 0 6px rgba(255,255,255,0.8);
+      box-shadow:
+        0 0 0 1px rgba(0,0,0,0.5),
+        0 0 8px rgba(255,255,255,1),
+        0 0 12px rgba(255,255,255,0.6);
       z-index: 2;
     }
 
@@ -1165,13 +1183,16 @@ export class AlbumAnalyzerApp extends LitElement {
 
     .mini-meter-marker {
       position: absolute;
-      top: -1px;
-      width: 2px;
-      height: 6px;
+      top: -2px;
+      width: 3px;
+      height: 8px;
       background: #fff;
       border-radius: 1px;
       transform: translateX(-50%);
-      box-shadow: 0 0 4px rgba(255,255,255,0.8);
+      box-shadow:
+        0 0 0 1px rgba(0,0,0,0.5),
+        0 0 6px rgba(255,255,255,1),
+        0 0 10px rgba(255,255,255,0.5);
       z-index: 2;
     }
 
@@ -1366,7 +1387,7 @@ export class AlbumAnalyzerApp extends LitElement {
 
     /* === ISSUES === */
     .issues-wrap {
-      margin: 8px 10px 0;
+      margin: 8px 10px 12px;
       padding-top: 8px;
       border-top: 1px solid var(--border-subtle);
     }
@@ -1428,6 +1449,107 @@ export class AlbumAnalyzerApp extends LitElement {
         padding-right: max(16px, env(safe-area-inset-right));
       }
     }
+
+    /* === VIEW MODE TOGGLE === */
+    .view-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .view-toggle-label {
+      font-family: 'Geist Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .view-toggle-btns {
+      display: flex;
+      background: var(--bg-inset);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .view-toggle-btn {
+      font-family: 'Geist Mono', monospace;
+      font-size: 0.6rem;
+      padding: 6px 12px;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all 0.15s;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .view-toggle-btn:hover {
+      color: var(--text-secondary);
+    }
+
+    .view-toggle-btn.active {
+      background: var(--accent-amber-dim);
+      color: #fff;
+    }
+
+    /* === SIMPLE MODE === */
+    .simple-metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+      padding: 8px 10px;
+    }
+
+    .simple-metric {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: var(--bg-inset);
+      border-radius: 4px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .simple-metric-label {
+      font-size: 0.65rem;
+      color: var(--text-secondary);
+    }
+
+    .simple-metric-value {
+      font-family: 'Geist Mono', monospace;
+      font-size: 0.7rem;
+      font-weight: 500;
+    }
+
+    .simple-metric-value.good { color: var(--led-green); }
+    .simple-metric-value.warning { color: var(--led-amber); }
+    .simple-metric-value.danger { color: var(--led-red); }
+    .simple-metric-value.info { color: var(--text-primary); }
+
+    /* === INFO BADGE (neutral) === */
+    .badge-info {
+      background: var(--bg-inset);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .badge-info::before {
+      background: var(--text-dim);
+    }
+
+    /* === PRIMARY CONCERN === */
+    .primary-concern {
+      font-size: 0.7rem;
+      color: var(--led-amber);
+      padding: 6px 10px;
+      background: rgba(251, 191, 36, 0.08);
+      border-left: 2px solid var(--led-amber);
+      margin: 0 10px 8px;
+    }
   `;
 
   static properties = {
@@ -1438,6 +1560,7 @@ export class AlbumAnalyzerApp extends LitElement {
     error: { state: true },
     expandedTracks: { state: true },
     jsonVisible: { state: true },
+    viewMode: { state: true },
   };
 
   private busy = false;
@@ -1447,6 +1570,7 @@ export class AlbumAnalyzerApp extends LitElement {
   private error: string | null = null;
   private expandedTracks: Set<number> = new Set();
   private jsonVisible = false;
+  private viewMode: 'simple' | 'advanced' = 'simple';
   private worker: Worker | null = null;
   private lightDomInput: HTMLInputElement | null = null;
 
@@ -1459,7 +1583,7 @@ export class AlbumAnalyzerApp extends LitElement {
       input.id = 'auralgeek-file-input';
       input.type = 'file';
       input.multiple = true;
-      input.accept = 'audio/*';
+      input.accept = 'audio/*,.wav,.wave,.flac,.mp3,.m4a,.aac,.ogg,.aiff,.aif';
       input.style.display = 'none';
       document.body.appendChild(input);
       this.lightDomInput = input;
@@ -2004,15 +2128,15 @@ export class AlbumAnalyzerApp extends LitElement {
           <div class="stat-group">
             <div class="stat-group-title"><span>◐</span> Loudness</div>
             <div class="stat-row">
-              <span class="stat-label">Range</span>
+              <span class="stat-label">Range ${this.renderInfoBtn("Min to max integrated loudness across all tracks. Smaller range = more cohesive album.")}</span>
               <span class="stat-value">${s.lufsRange ?? '—'}</span>
             </div>
             <div class="stat-row">
-              <span class="stat-label">Consistency</span>
+              <span class="stat-label">Consistency ${this.renderInfoBtn("Standard deviation of track loudness. Under 2 LU is ideal for cohesive albums.")}</span>
               <span class="stat-value ${(s.lufsConsistency ?? 0) > 3 ? 'warning' : ''}">${s.lufsConsistency?.toFixed(1) ?? '—'} LU σ</span>
             </div>
             <div class="stat-row">
-              <span class="stat-label">Avg LRA</span>
+              <span class="stat-label">Avg LRA ${this.renderInfoBtn("Average Loudness Range per EBU Tech 3342. Higher = more dynamic. 6-12 LU typical for pop/rock.")}</span>
               <span class="stat-value">${s.avgLRA?.toFixed(1) ?? '—'} LU</span>
             </div>
           </div>
@@ -2021,15 +2145,15 @@ export class AlbumAnalyzerApp extends LitElement {
           <div class="stat-group">
             <div class="stat-group-title"><span>▲</span> Peaks</div>
             <div class="stat-row">
-              <span class="stat-label">Avg True Peak</span>
+              <span class="stat-label">Avg True Peak ${this.renderInfoBtn("Average inter-sample peak across tracks. Keep below -1 dBTP for streaming safety.")}</span>
               <span class="stat-value">${s.avgTruePeak?.toFixed(1) ?? '—'} dBTP</span>
             </div>
             <div class="stat-row">
-              <span class="stat-label">Max True Peak</span>
+              <span class="stat-label">Max True Peak ${this.renderInfoBtn("Highest true peak in the album. Above -1 dBTP risks clipping after codec conversion.")}</span>
               <span class="stat-value ${(s.maxTruePeak ?? -10) > -1 ? 'danger' : ''}">${s.maxTruePeak?.toFixed(1) ?? '—'} dBTP</span>
             </div>
             <div class="stat-row">
-              <span class="stat-label">Above -1 dBTP</span>
+              <span class="stat-label">Above -1 dBTP ${this.renderInfoBtn("Number of tracks exceeding the -1 dBTP streaming ceiling. These may clip on some platforms.")}</span>
               <span class="stat-value ${(s.tracksAboveNeg1dBTP ?? 0) > 0 ? 'warning' : 'good'}">${s.tracksAboveNeg1dBTP ?? 0} tracks</span>
             </div>
           </div>
@@ -2038,15 +2162,15 @@ export class AlbumAnalyzerApp extends LitElement {
           <div class="stat-group">
             <div class="stat-group-title"><span>◧</span> Dynamics</div>
             <div class="stat-row">
-              <span class="stat-label">Avg DR</span>
+              <span class="stat-label">Avg DR ${this.renderInfoBtn("Average dynamic range. Higher values mean more dynamics preserved. Under 6 dB suggests heavy limiting.")}</span>
               <span class="stat-value">${s.avgDynamicRange?.toFixed(1) ?? '—'} dB</span>
             </div>
             <div class="stat-row">
-              <span class="stat-label">Avg Crest</span>
+              <span class="stat-label">Avg Crest ${this.renderInfoBtn("Average peak-to-RMS ratio. Higher = more punch. Under 8 dB may sound flat.")}</span>
               <span class="stat-value">${s.avgCrestFactor?.toFixed(1) ?? '—'} dB</span>
             </div>
             <div class="stat-row">
-              <span class="stat-label">Clipping</span>
+              <span class="stat-label">Clipping ${this.renderInfoBtn("Tracks with detected digital clipping. Any clipping should be addressed before release.")}</span>
               <span class="stat-value ${(s.tracksWithClipping ?? 0) > 0 ? 'danger' : 'good'}">${s.tracksWithClipping ?? 0} tracks</span>
             </div>
           </div>
@@ -2055,15 +2179,15 @@ export class AlbumAnalyzerApp extends LitElement {
           <div class="stat-group">
             <div class="stat-group-title"><span>◑</span> Stereo</div>
             <div class="stat-row">
-              <span class="stat-label">Avg Width</span>
+              <span class="stat-label">Avg Width ${this.renderInfoBtn("Average stereo width across tracks. 50-80% is typical. Very wide mixes may have mono compatibility issues.")}</span>
               <span class="stat-value">${s.avgStereoWidth ?? '—'}%</span>
             </div>
             <div class="stat-row">
-              <span class="stat-label">Avg Correlation</span>
+              <span class="stat-label">Avg Correlation ${this.renderInfoBtn("L/R channel correlation. 1 = mono, 0 = uncorrelated. Below 0.5 may have phase issues.")}</span>
               <span class="stat-value ${(s.avgCorrelation ?? 1) < 0.5 ? 'warning' : ''}">${s.avgCorrelation?.toFixed(2) ?? '—'}</span>
             </div>
             <div class="stat-row">
-              <span class="stat-label">Phase Issues</span>
+              <span class="stat-label">Phase Issues ${this.renderInfoBtn("Tracks with detected phase problems. These may sound hollow or lose bass in mono playback.")}</span>
               <span class="stat-value ${(s.tracksWithPhaseIssues ?? 0) > 0 ? 'warning' : 'good'}">${s.tracksWithPhaseIssues ?? 0} tracks</span>
             </div>
           </div>
@@ -2072,11 +2196,11 @@ export class AlbumAnalyzerApp extends LitElement {
           <div class="stat-group">
             <div class="stat-group-title"><span>◔</span> Spectral</div>
             <div class="stat-row">
-              <span class="stat-label">Avg Tilt</span>
+              <span class="stat-label">Avg Tilt ${this.renderInfoBtn("Average spectral slope. Negative = dark/warm, Positive = bright. -2 to -4 dB/oct typical for mastered music.")}</span>
               <span class="stat-value">${s.avgSpectralTilt?.toFixed(1) ?? '—'} dB/oct</span>
             </div>
             <div class="stat-row">
-              <span class="stat-label">Avg Harshness</span>
+              <span class="stat-label">Avg Harshness ${this.renderInfoBtn("Average 2-5kHz energy prominence. Above 30% may cause listener fatigue on extended listening.")}</span>
               <span class="stat-value ${(s.avgHarshness ?? 0) > 30 ? 'warning' : ''}">${s.avgHarshness ?? '—'}%</span>
             </div>
           </div>
@@ -2085,15 +2209,15 @@ export class AlbumAnalyzerApp extends LitElement {
           <div class="stat-group">
             <div class="stat-group-title"><span>✓</span> Quality</div>
             <div class="stat-row">
-              <span class="stat-label">Issues</span>
+              <span class="stat-label">Issues ${this.renderInfoBtn("Critical problems that should be fixed before release. These affect audio quality or playback.")}</span>
               <span class="stat-value ${(s.tracksWithIssues ?? 0) > 0 ? 'danger' : 'good'}">${s.tracksWithIssues ?? 0} tracks (${s.totalIssues ?? 0} total)</span>
             </div>
             <div class="stat-row">
-              <span class="stat-label">Warnings</span>
+              <span class="stat-label">Warnings ${this.renderInfoBtn("Potential concerns that may or may not need attention depending on artistic intent.")}</span>
               <span class="stat-value ${(s.tracksWithWarnings ?? 0) > 0 ? 'warning' : 'good'}">${s.tracksWithWarnings ?? 0} tracks (${s.totalWarnings ?? 0} total)</span>
             </div>
             <div class="stat-row">
-              <span class="stat-label">AI Artifacts</span>
+              <span class="stat-label">Artifacts ${this.renderInfoBtn("Tracks with detected processing artifacts like unnatural high-frequency shimmer or timing anomalies.")}</span>
               <span class="stat-value ${(s.tracksWithArtifacts ?? 0) > 0 ? 'warning' : 'good'}">${s.tracksWithArtifacts ?? 0} tracks</span>
             </div>
           </div>
@@ -2102,11 +2226,11 @@ export class AlbumAnalyzerApp extends LitElement {
           <div class="stat-group">
             <div class="stat-group-title"><span>⟷</span> Album Cohesion</div>
             <div class="stat-row">
-              <span class="stat-label">LUFS Spread</span>
+              <span class="stat-label">LUFS Spread ${this.renderInfoBtn("Difference between loudest and quietest track. Under 3 LU is cohesive, over 5 LU may feel inconsistent.")}</span>
               <span class="stat-value ${(s.albumLoudnessSpread ?? 0) > 4 ? 'warning' : ''}">${s.albumLoudnessSpread?.toFixed(1) ?? '—'} LU</span>
             </div>
             <div class="stat-row">
-              <span class="stat-label">Sequence Flow</span>
+              <span class="stat-label">Sequence Flow ${this.renderInfoBtn("Penalizes large loudness jumps between adjacent tracks. 100% = smooth transitions throughout.")}</span>
               <span class="stat-value ${(s.sequenceConsistencyScore ?? 100) < 85 ? 'warning' : 'good'}">${s.sequenceConsistencyScore ?? '—'}%</span>
             </div>
             ${s.sequenceConsistencyNote ? html`
@@ -2115,7 +2239,7 @@ export class AlbumAnalyzerApp extends LitElement {
               </div>
             ` : null}
             <div class="stat-row">
-              <span class="stat-label">Spectral Match</span>
+              <span class="stat-label">Spectral Match ${this.renderInfoBtn("How consistent the tonal character is across tracks. Low scores indicate tracks that may sound out of place.")}</span>
               <span class="stat-value ${(s.spectralConsistencyScore ?? 100) < 85 ? 'warning' : 'good'}">${s.spectralConsistencyScore ?? '—'}%</span>
             </div>
             ${s.spectralNote ? html`
@@ -2130,15 +2254,15 @@ export class AlbumAnalyzerApp extends LitElement {
             <div class="stat-group">
               <div class="stat-group-title"><span>◎</span> Album Character</div>
               <div class="stat-row">
-                <span class="stat-label">Avg Tilt</span>
+                <span class="stat-label">Avg Tilt ${this.renderInfoBtn("Album's overall spectral slope. This defines the general brightness/warmth of the collection.")}</span>
                 <span class="stat-value">${s.spectralFingerprint.avgTilt.toFixed(1)} dB/oct</span>
               </div>
               <div class="stat-row">
-                <span class="stat-label">Avg Harshness</span>
+                <span class="stat-label">Avg Harshness ${this.renderInfoBtn("Album's overall harshness level. Consistent values across tracks contribute to cohesive sound.")}</span>
                 <span class="stat-value">${s.spectralFingerprint.avgHarshness.toFixed(0)}%</span>
               </div>
               <div class="stat-row">
-                <span class="stat-label">Avg Width</span>
+                <span class="stat-label">Avg Width ${this.renderInfoBtn("Album's overall stereo width character. Consistent width helps maintain a unified listening experience.")}</span>
                 <span class="stat-value">${s.spectralFingerprint.avgWidth.toFixed(0)}%</span>
               </div>
             </div>
@@ -2160,8 +2284,18 @@ export class AlbumAnalyzerApp extends LitElement {
       </div>
 
       <div class="panel">
-        <h3 class="panel-title">Track Analysis</h3>
-        ${album.tracks.map(t => this.renderTrackCard(t))}
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <h3 class="panel-title" style="margin: 0; border: 0; padding: 0;">Track Analysis</h3>
+          <div class="view-toggle">
+            <span class="view-toggle-label">View:</span>
+            <div class="view-toggle-btns">
+              <button class="view-toggle-btn ${this.viewMode === 'simple' ? 'active' : ''}" @click=${() => { this.viewMode = 'simple'; }}>Simple</button>
+              <button class="view-toggle-btn ${this.viewMode === 'advanced' ? 'active' : ''}" @click=${() => { this.viewMode = 'advanced'; }}>Advanced</button>
+            </div>
+          </div>
+        </div>
+        <div style="border-bottom: 1px solid var(--border-subtle); margin: 10px 0 14px;"></div>
+        ${album.tracks.map(t => this.viewMode === 'simple' ? this.renderSimpleTrackCard(t) : this.renderTrackCard(t))}
       </div>
 
       <div class="panel">
@@ -2218,7 +2352,7 @@ export class AlbumAnalyzerApp extends LitElement {
         <div class="track-content">
           <div class="track-content-inner">
             <!-- LOUDNESS MODULE (EBU R128) -->
-            <div class="metric-module">
+            <div class="metric-module primary">
               <h4 class="module-title"><span class="module-icon">◐</span> Loudness<span class="module-rating ${this.getRatingClass(scores.loudness)}">${scores.loudness.toFixed(1)}</span></h4>
               ${this.renderMeter("Integrated", "Gated loudness per EBU R128. Target: -14 LUFS (Spotify), -16 (Apple).", t.loudness.integratedLUFS, "LUFS", "loudness", (v) => ((v+24)/20)*100, ["-24", "-19", "-14", "-9", "-4"])}
               ${this.renderMetricRow("Ungated", "Integrated loudness without gating.", `${t.loudness.integratedUngatedLUFS?.toFixed(1) ?? "—"} LUFS`, "", { numValue: t.loudness.integratedUngatedLUFS, type: "center", min: -24, max: -4 })}
@@ -2234,7 +2368,7 @@ export class AlbumAnalyzerApp extends LitElement {
             </div>
 
             <!-- PEAKS & HEADROOM -->
-            <div class="metric-module">
+            <div class="metric-module primary">
               <h4 class="module-title"><span class="module-icon">▲</span> Peaks<span class="module-rating ${this.getRatingClass(scores.peaks)}">${scores.peaks.toFixed(1)}</span></h4>
               ${this.renderMeter("True Peak", `Inter-sample peak (${t.loudness.truePeakOversampling ?? 4}x oversampled). Keep ≤ -1 dBTP.`, t.loudness.truePeakDBTP, "dBTP", "peak", (v) => ((v+12)/12)*100, ["-12", "-9", "-6", "-3", "0"])}
               ${this.renderMetricRow("Sample Peak", "Non-oversampled peak.", `${t.loudness.samplePeakDBFS?.toFixed(1) ?? "—"} dBFS`, "", { numValue: t.loudness.samplePeakDBFS, type: "level", min: -24, max: 0 })}
@@ -2249,7 +2383,7 @@ export class AlbumAnalyzerApp extends LitElement {
             </div>
 
             <!-- DYNAMICS -->
-            <div class="metric-module">
+            <div class="metric-module primary">
               <h4 class="module-title"><span class="module-icon">◧</span> Dynamics<span class="module-rating ${this.getRatingClass(scores.dynamics)}">${scores.dynamics.toFixed(1)}</span></h4>
               ${this.renderMeter("Dynamic Range", "Percentile-based DR. Higher = more dynamic.", t.dynamics.dynamicRangeDB, "dB", "dynamics", (v) => (v/40)*100, ["0", "10", "20", "30", "40"])}
               ${this.renderMetricRow("PLR", "Peak-to-Loudness Ratio. Lower = squashed.", `${t.dynamics.plrDB?.toFixed(1) ?? "—"} dB`, (t.dynamics.plrDB ?? 20) < 8 ? "warning" : "", { numValue: t.dynamics.plrDB, type: "high-good", min: 0, max: 20 })}
@@ -2321,7 +2455,7 @@ export class AlbumAnalyzerApp extends LitElement {
 
             <!-- MUSICAL + STREAMING + ARTIFACTS (stacked) -->
             <div class="stacked-modules">
-              <div class="metric-module">
+              <div class="metric-module tertiary">
                 <h4 class="module-title"><span class="module-icon">♪</span> Musical<span class="module-rating ${this.getRatingClass(scores.musical)}">${scores.musical.toFixed(1)}</span></h4>
                 <div class="music-feature-row">
                   <span class="music-primary">${t.musicalFeatures.bpmPrimary ?? "—"} BPM</span>
@@ -2340,7 +2474,7 @@ export class AlbumAnalyzerApp extends LitElement {
                 ${t.musicalFeatures.keyStabilityNote ? html`<div class="metric-note" style="font-size: 0.6rem; color: var(--text-secondary); padding: 2px 0;">${t.musicalFeatures.keyStabilityNote}</div>` : null}
               </div>
 
-              <div class="metric-module">
+              <div class="metric-module tertiary">
                 <h4 class="module-title"><span class="module-icon">☁</span> Streaming<span class="module-rating ${this.getRatingClass(scores.streaming)}">${scores.streaming.toFixed(1)}</span></h4>
                 <div class="platform-grid">
                   ${this.renderPlatformCard(t.streamingSimulation.spotify)}
@@ -2356,7 +2490,7 @@ export class AlbumAnalyzerApp extends LitElement {
                 ` : null}
               </div>
 
-              <div class="metric-module">
+              <div class="metric-module tertiary">
                 <h4 class="module-title"><span class="module-icon">◍</span> Artifacts<span class="module-rating ${this.getRatingClass(scores.artifacts)}">${scores.artifacts.toFixed(1)}</span></h4>
                 ${this.renderMetricRow("AI Score", "Lower is better. Detects unnatural HF shimmer.", `${t.aiArtifacts.overallAIScore?.toFixed(0) ?? 0}/100`, t.aiArtifacts.overallAIScore && t.aiArtifacts.overallAIScore > 30 ? "warning" : "good", { numValue: t.aiArtifacts.overallAIScore, type: "low-good", min: 0, max: 100 })}
                 ${this.renderMetricRow("Shimmer", "HF shimmer detection.", t.aiArtifacts.shimmerDetected ? "Detected" : "None", t.aiArtifacts.shimmerDetected ? "warning" : "good")}
@@ -2375,6 +2509,118 @@ export class AlbumAnalyzerApp extends LitElement {
             </div>
           ` : null}
         </div>
+      </div>
+    `;
+  }
+
+  private renderSimpleTrackCard(t: TrackAnalysis) {
+    const statusClass = t.distributionReady ? "badge-ok" : t.issues.length ? "badge-bad" : "badge-warn";
+
+    // Helper functions for status
+    const lufsStatus = (v: number | null) => {
+      if (v === null) return 'info';
+      if (v > -9 || v < -20) return 'danger';
+      if (v > -11 || v < -18) return 'warning';
+      return 'good';
+    };
+
+    const tpStatus = (v: number | null) => {
+      if (v === null) return 'info';
+      if (v > -0.5) return 'danger';
+      if (v > -1) return 'warning';
+      return 'good';
+    };
+
+    const drStatus = (v: number | null) => {
+      if (v === null) return 'info';
+      if (v < 4) return 'danger';
+      if (v < 6) return 'warning';
+      return 'good';
+    };
+
+    const corrStatus = (v: number | null) => {
+      if (v === null) return 'info';
+      if (v < 0) return 'danger';
+      if (v < 0.5) return 'warning';
+      return 'good';
+    };
+
+    const harshStatus = (v: number | null) => {
+      if (v === null) return 'info';
+      if (v > 35) return 'danger';
+      if (v > 28) return 'warning';
+      return 'good';
+    };
+
+    const artifactStatus = (v: number | null) => {
+      if (v === null) return 'info';
+      if (v > 50) return 'danger';
+      if (v > 30) return 'warning';
+      return 'good';
+    };
+
+    // Determine primary concern
+    let primaryConcern: string | null = null;
+    if (t.dynamics.hasClipping) {
+      primaryConcern = "Clipping detected — may cause distortion";
+    } else if ((t.loudness.truePeakDBTP ?? -10) > -0.5) {
+      primaryConcern = "True peak too high — risk of inter-sample clipping";
+    } else if ((t.stereo.correlationMean ?? 1) < 0.3) {
+      primaryConcern = "Low stereo correlation — mono compatibility issues";
+    } else if ((t.spectral.harshnessIndex ?? 0) > 35) {
+      primaryConcern = "High harshness — may cause listener fatigue";
+    } else if ((t.loudness.integratedLUFS ?? -14) > -9) {
+      primaryConcern = "Very loud — will be attenuated on streaming platforms";
+    }
+
+    return html`
+      <div class="track-item">
+        <div class="track-header" style="cursor: default;">
+          <span class="track-num">${String(t.trackNumber).padStart(2, '0')}</span>
+          <div class="track-info">
+            <div class="track-name">${t.parameters.filename}</div>
+            <div class="track-meta">${t.parameters.durationFormatted} · ${t.parameters.sampleRate ?? "—"} Hz</div>
+          </div>
+          <div class="track-badges">
+            <span class="badge ${statusClass}">${t.distributionReady ? 'OK' : 'Check'}</span>
+          </div>
+        </div>
+
+        ${primaryConcern ? html`<div class="primary-concern">⚠ ${primaryConcern}</div>` : null}
+
+        <div class="simple-metrics">
+          <div class="simple-metric">
+            <span class="simple-metric-label">Loudness</span>
+            <span class="simple-metric-value ${lufsStatus(t.loudness.integratedLUFS)}">${t.loudness.integratedLUFS?.toFixed(1) ?? '—'} LUFS</span>
+          </div>
+          <div class="simple-metric">
+            <span class="simple-metric-label">True Peak</span>
+            <span class="simple-metric-value ${tpStatus(t.loudness.truePeakDBTP)}">${t.loudness.truePeakDBTP?.toFixed(1) ?? '—'} dBTP</span>
+          </div>
+          <div class="simple-metric">
+            <span class="simple-metric-label">Dynamic Range</span>
+            <span class="simple-metric-value ${drStatus(t.dynamics.dynamicRangeDB)}">${t.dynamics.dynamicRangeDB?.toFixed(1) ?? '—'} dB</span>
+          </div>
+          <div class="simple-metric">
+            <span class="simple-metric-label">Stereo Corr.</span>
+            <span class="simple-metric-value ${corrStatus(t.stereo.correlationMean)}">${t.stereo.correlationMean?.toFixed(2) ?? '—'}</span>
+          </div>
+          <div class="simple-metric">
+            <span class="simple-metric-label">Harshness</span>
+            <span class="simple-metric-value ${harshStatus(t.spectral.harshnessIndex)}">${t.spectral.harshnessIndex?.toFixed(0) ?? '—'}%</span>
+          </div>
+          <div class="simple-metric">
+            <span class="simple-metric-label">Artifacts</span>
+            <span class="simple-metric-value ${artifactStatus(t.aiArtifacts.overallAIScore)}">${t.aiArtifacts.overallAIScore?.toFixed(0) ?? 0}/100</span>
+          </div>
+        </div>
+
+        ${t.issues.length || t.warnings.length ? html`
+          <div class="issues-wrap" style="margin-top: 0;">
+            ${t.issues.map(i => html`<div class="alert alert-danger">${i}</div>`)}
+            ${t.warnings.map(w => html`<div class="alert alert-warning">${w}</div>`)}
+          </div>
+        ` : null}
       </div>
     `;
   }
