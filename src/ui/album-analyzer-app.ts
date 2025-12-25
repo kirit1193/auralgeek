@@ -1,6 +1,7 @@
-import { LitElement, css, html, TemplateResult } from "lit";
+import { LitElement, html, TemplateResult } from "lit";
 import type { AlbumAnalysis, TrackAnalysis } from "../core/types";
 import { decodeToPCM } from "../analysis/decode";
+import { appStyles } from "./styles";
 
 type WorkerMsg =
   | { type: "progress"; current: number; total: number; filename: string; stage?: string; stageProgress?: number }
@@ -8,8 +9,9 @@ type WorkerMsg =
   | { type: "error"; message: string };
 
 export class AlbumAnalyzerApp extends LitElement {
-  static styles = css`
-    @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700&display=swap');
+  static styles = appStyles;
+
+  /* CSS extracted to src/ui/styles.ts */
 
     /* === STUDIO CONSOLE THEME === */
     /* Inspired by SSL/Neve mixing consoles, VU meters, and control room aesthetics */
@@ -2289,8 +2291,8 @@ export class AlbumAnalyzerApp extends LitElement {
           <div class="view-toggle">
             <span class="view-toggle-label">View:</span>
             <div class="view-toggle-btns">
-              <button class="view-toggle-btn ${this.viewMode === 'simple' ? 'active' : ''}" @click=${() => { this.viewMode = 'simple'; }}>Simple</button>
-              <button class="view-toggle-btn ${this.viewMode === 'advanced' ? 'active' : ''}" @click=${() => { this.viewMode = 'advanced'; }}>Advanced</button>
+              <button class="view-toggle-btn ${this.viewMode === 'simple' ? 'active' : ''}" @click=${() => { this.viewMode = 'simple'; this.requestUpdate(); }}>Simple</button>
+              <button class="view-toggle-btn ${this.viewMode === 'advanced' ? 'active' : ''}" @click=${() => { this.viewMode = 'advanced'; this.requestUpdate(); }}>Advanced</button>
             </div>
           </div>
         </div>
