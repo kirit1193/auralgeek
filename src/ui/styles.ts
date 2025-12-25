@@ -105,6 +105,11 @@ export const appStyles = css`
       margin-bottom: 4px;
     }
 
+    .logo-icon {
+      flex-shrink: 0;
+      filter: drop-shadow(0 0 4px rgba(232, 151, 60, 0.3));
+    }
+
     .logo {
       font-family: 'Geist Mono', 'SF Mono', 'Monaco', monospace;
       font-size: 1.1rem;

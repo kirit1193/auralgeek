@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="waveGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="60%" stop-color="#22c55e"/>
+      <stop offset="80%" stop-color="#eab308"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+    <linearGradient id="bandGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f0a854"/>
+      <stop offset="50%" stop-color="#e8973c"/>
+      <stop offset="100%" stop-color="#c77a2e"/>
+    </linearGradient>
+    <linearGradient id="cupGradL" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e8973c"/>
+      <stop offset="100%" stop-color="#b8722a"/>
+    </linearGradient>
+    <linearGradient id="cupGradR" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e8973c"/>
+      <stop offset="100%" stop-color="#b8722a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Headphone band - amber -->
+  <path d="M 4 17
+           C 4 8, 8 3, 16 3
+           C 24 3, 28 8, 28 17"
+        fill="none" stroke="url(#bandGrad)" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Left ear cup - angled inward -->
+  <g transform="rotate(8, 4, 19)">
+    <rect x="0.5" y="13" width="7" height="12" rx="1.5" fill="url(#cupGradL)" stroke="#c77a2e" stroke-width="0.5"/>
+    <rect x="1.5" y="14.2" width="5" height="9.6" rx="1" fill="#1a1a1a"/>
+  </g>
+
+  <!-- Right ear cup - angled inward -->
+  <g transform="rotate(-8, 28, 19)">
+    <rect x="24.5" y="13" width="7" height="12" rx="1.5" fill="url(#cupGradR)" stroke="#c77a2e" stroke-width="0.5"/>
+    <rect x="25.5" y="14.2" width="5" height="9.6" rx="1" fill="#1a1a1a"/>
+  </g>
+
+  <!-- Audio waveform bars - centered, moved down -->
+  <rect x="15" y="13" width="2" height="12" rx="1" fill="url(#waveGrad)"/>
+  <rect x="11.5" y="15" width="2" height="8" rx="1" fill="url(#waveGrad)"/>
+  <rect x="18.5" y="15" width="2" height="8" rx="1" fill="url(#waveGrad)"/>
+</svg>

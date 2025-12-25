@@ -242,6 +242,13 @@ export class AlbumAnalyzerApp extends LitElement {
       <div class="container">
         <div class="header-module">
           <div class="brand-row">
+            <svg class="logo-icon" viewBox="0 0 32 32" width="36" height="36">
+              <circle cx="16" cy="16" r="15" fill="#141414" stroke="#333" stroke-width="1"/>
+              <path d="M 5 20 A 11 11 0 0 1 27 20" fill="none" stroke="#2a2a2a" stroke-width="3" stroke-linecap="round"/>
+              <path d="M 8 18 A 9 9 0 0 1 18 8" fill="none" stroke="#e8973c" stroke-width="2.5" stroke-linecap="round"/>
+              <line x1="16" y1="20" x2="11" y2="10" stroke="#e8973c" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="16" cy="20" r="2" fill="#e8973c"/>
+            </svg>
             <h1 class="logo">Auralgeek</h1>
             <span class="version-badge">v1.0</span>
           </div>

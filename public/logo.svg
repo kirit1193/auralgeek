@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="waveGradient" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="60%" stop-color="#22c55e"/>
+      <stop offset="80%" stop-color="#eab308"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+    <linearGradient id="bandGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f0a854"/>
+      <stop offset="50%" stop-color="#e8973c"/>
+      <stop offset="100%" stop-color="#c77a2e"/>
+    </linearGradient>
+    <linearGradient id="cupGradientL" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e8973c"/>
+      <stop offset="100%" stop-color="#b8722a"/>
+    </linearGradient>
+    <linearGradient id="cupGradientR" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e8973c"/>
+      <stop offset="100%" stop-color="#b8722a"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Headphone band - amber, wider arc -->
+  <path d="M 24 105
+           C 24 45, 55 18, 100 18
+           C 145 18, 176 45, 176 105"
+        fill="none" stroke="url(#bandGradient)" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- Headphone band inner edge -->
+  <path d="M 32 102
+           C 32 50, 60 26, 100 26
+           C 140 26, 168 50, 168 102"
+        fill="none" stroke="#0a0a0a" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Left ear cup - angled inward (rotated ~8 degrees) -->
+  <g transform="rotate(8, 24, 115)">
+    <rect x="4" y="80" width="40" height="70" rx="8" fill="url(#cupGradientL)" stroke="#c77a2e" stroke-width="2"/>
+    <rect x="10" y="86" width="28" height="58" rx="5" fill="#1a1a1a" stroke="#333" stroke-width="0.5"/>
+    <ellipse cx="24" cy="115" rx="9" ry="20" fill="#0f0f0f"/>
+  </g>
+
+  <!-- Right ear cup - angled inward (rotated ~-8 degrees) -->
+  <g transform="rotate(-8, 176, 115)">
+    <rect x="156" y="80" width="40" height="70" rx="8" fill="url(#cupGradientR)" stroke="#c77a2e" stroke-width="2"/>
+    <rect x="162" y="86" width="28" height="58" rx="5" fill="#1a1a1a" stroke="#333" stroke-width="0.5"/>
+    <ellipse cx="176" cy="115" rx="9" ry="20" fill="#0f0f0f"/>
+  </g>
+
+  <!-- Audio waveform / frequency bars - moved down, centered at y=115 -->
+  <g filter="url(#glow)">
+    <!-- Center bar (tallest) -->
+    <rect x="97" y="82" width="6" height="66" rx="3" fill="url(#waveGradient)"/>
+
+    <!-- Adjacent bars -->
+    <rect x="84" y="92" width="6" height="46" rx="3" fill="url(#waveGradient)"/>
+    <rect x="110" y="92" width="6" height="46" rx="3" fill="url(#waveGradient)"/>
+
+    <!-- Outer bars -->
+    <rect x="71" y="100" width="6" height="30" rx="3" fill="url(#waveGradient)"/>
+    <rect x="123" y="100" width="6" height="30" rx="3" fill="url(#waveGradient)"/>
+
+    <!-- Outermost bars -->
+    <rect x="58" y="106" width="6" height="18" rx="3" fill="url(#waveGradient)"/>
+    <rect x="136" y="106" width="6" height="18" rx="3" fill="url(#waveGradient)"/>
+  </g>
+
+  <!-- Brand text -->
+  <text x="100" y="178" text-anchor="middle"
+        font-family="system-ui, -apple-system, sans-serif"
+        font-size="11" font-weight="600" fill="#e5e5e5" letter-spacing="1.5">AURALGEEK</text>
+</svg>
