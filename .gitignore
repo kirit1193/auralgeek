@@ -144,3 +144,6 @@ public/MediaInfoModule.wasm
 # Notes/review files
 improvements.txt
 .DS_Store
+
+# Generated test fixtures
+tests/fixtures/synthetic/

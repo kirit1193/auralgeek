@@ -1,3 +1,21 @@
+/**
+ * Loudness Analysis Module
+ *
+ * Implements ITU-R BS.1770-4 / EBU R128 loudness measurement including:
+ * - Integrated loudness (LUFS) with gating
+ * - True peak measurement (dBTP) with 4x oversampling
+ * - Loudness Range (LRA) per EBU Tech 3342
+ * - Short-term and momentary loudness
+ *
+ * True Peak Measurement Provenance:
+ * - Primary: ebur128-wasm (https://github.com/streamonkey/ebur128_wasm)
+ *   Uses fixed 4x oversampling with FIR interpolation per ITU-R BS.1770-4
+ *   Based on libebur128 reference implementation
+ *
+ * - Fallback: truePeak.ts (ITU-R BS.1770-4 Annex 2)
+ *   48-tap polyphase FIR filter split into 4 phases (12 taps each)
+ *   Used when ebur128-wasm returns invalid values
+ */
 import {
   ebur128_integrated_mono,
   ebur128_integrated_stereo,
@@ -6,6 +24,7 @@ import {
 } from "ebur128-wasm";
 
 import { dbFromLinear } from "../core/format";
+import { verifyTruePeak, computeSamplePeak } from "./truePeak";
 
 export interface LoudnessResult {
   integratedLUFS: number;
@@ -13,6 +32,8 @@ export interface LoudnessResult {
   truePeakDBTP: number;
   samplePeakDBFS: number;
   truePeakOversampling: number;
+  truePeakSource: 'ebur128' | 'fallback';
+  truePeakWarning?: string;
   ispMarginDB: number;
   maxMomentaryLUFS: number;
   maxShortTermLUFS: number;
@@ -228,17 +249,7 @@ function computeLRA(shortTermValues: number[]): number {
   return Math.max(0, p95 - p10);
 }
 
-// Find sample peak (no oversampling)
-function findSamplePeak(channels: Float32Array[]): number {
-  let peak = 0;
-  for (const ch of channels) {
-    for (let i = 0; i < ch.length; i++) {
-      const abs = Math.abs(ch[i]);
-      if (abs > peak) peak = abs;
-    }
-  }
-  return peak;
-}
+// Note: Sample peak computation moved to truePeak.ts (computeSamplePeak)
 
 // Detect abrupt loudness changes (>6 LU within 2 seconds)
 function findAbruptChanges(
@@ -369,29 +380,28 @@ function analyzePeakClustering(
 
 export function computeLoudness(sampleRate: number, channels: Float32Array[]): LoudnessResult {
   // Use ebur128-wasm for integrated loudness and true peak (gold standard)
+  // ebur128-wasm uses fixed 4x oversampling per ITU-R BS.1770-4
   let integratedLUFS: number;
-  let tpLinear: number;
+  let ebur128TruePeak: number;
 
   if (channels.length === 1) {
     integratedLUFS = ebur128_integrated_mono(sampleRate, channels[0]);
-    tpLinear = ebur128_true_peak_mono(sampleRate, channels[0]);
+    ebur128TruePeak = ebur128_true_peak_mono(sampleRate, channels[0]);
   } else {
     const left = channels[0];
     const right = channels[1];
     integratedLUFS = ebur128_integrated_stereo(sampleRate, left, right);
     const tpArr = ebur128_true_peak_stereo(sampleRate, left, right) as unknown as number[];
-    tpLinear = Math.max(Number(tpArr[0] ?? 0), Number(tpArr[1] ?? 0));
+    ebur128TruePeak = Math.max(Number(tpArr[0] ?? 0), Number(tpArr[1] ?? 0));
   }
 
   // Sample peak (non-oversampled)
-  const samplePeakLinear = findSamplePeak(channels);
+  const samplePeakLinear = computeSamplePeak(channels);
   const samplePeakDBFS = dbFromLinear(samplePeakLinear);
 
-  // Fallback if ebur128 returns invalid true peak
-  if (!isFinite(tpLinear) || tpLinear <= 0) {
-    tpLinear = samplePeakLinear;
-  }
-  const truePeakDBTP = dbFromLinear(tpLinear);
+  // Verify true peak with fallback to ITU-R BS.1770-4 implementation
+  const tpResult = verifyTruePeak(ebur128TruePeak, channels);
+  const truePeakDBTP = dbFromLinear(tpResult.truePeak);
 
   // ISP margin (inter-sample peak headroom)
   const ispMarginDB = truePeakDBTP - samplePeakDBFS;
@@ -469,7 +479,9 @@ export function computeLoudness(sampleRate: number, channels: Float32Array[]): L
     integratedUngatedLUFS,
     truePeakDBTP,
     samplePeakDBFS,
-    truePeakOversampling: 4, // ebur128-wasm uses 4x oversampling
+    truePeakOversampling: 4, // Both ebur128-wasm and fallback use 4x oversampling per ITU-R BS.1770-4
+    truePeakSource: tpResult.source,
+    truePeakWarning: tpResult.warning,
     ispMarginDB,
     maxMomentaryLUFS,
     maxShortTermLUFS,
@@ -482,7 +494,6 @@ export function computeLoudness(sampleRate: number, channels: Float32Array[]): L
     loudestSegmentTime,
     quietestSegmentTime,
     abruptChanges,
-    // NEW fields
     loudnessSlopeDBPerMin,
     loudnessVolatilityLU,
     peakClusteringType: peakClustering.type,

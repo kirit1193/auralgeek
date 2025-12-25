@@ -42,6 +42,10 @@ export interface SpectralOut {
   sibilanceIndexWeighted: number;
   spectralTiltWeightedDBPerOctave: number;
 
+  // A-weighted spectral features
+  spectralCentroidWeightedHz: number;
+  spectralRolloffWeightedHz: number;
+
   // Spectral balance targets (1.4B)
   spectralBalanceStatus: "bright" | "balanced" | "dark";
   spectralBalanceNote: string | null;
@@ -187,6 +191,68 @@ function computeWeightedSpectralTilt(magnitudes: Float32Array, freqResolution: n
   return (count * sumXY - sumX * sumY) / (count * sumXX - sumX * sumX);
 }
 
+/**
+ * A-weighted spectral centroid (power-based)
+ * Uses perceptual A-weighting to emphasize frequencies the ear is most sensitive to
+ */
+function computeAWeightedCentroid(magnitudes: Float32Array, freqResolution: number): number {
+  let weightedPowerSum = 0;
+  let totalWeightedPower = 0;
+
+  for (let k = 1; k < magnitudes.length; k++) {
+    const freq = k * freqResolution;
+    if (freq < 20) continue;
+
+    const aWeight = Math.pow(10, aWeighting(freq) / 20);
+    const power = magnitudes[k] * magnitudes[k];
+    const weightedPower = power * aWeight * aWeight;
+
+    weightedPowerSum += freq * weightedPower;
+    totalWeightedPower += weightedPower;
+  }
+
+  return totalWeightedPower > 0 ? weightedPowerSum / totalWeightedPower : 0;
+}
+
+/**
+ * A-weighted spectral rolloff (power-based)
+ * Finds frequency below which 85% of A-weighted power resides
+ */
+function computeAWeightedRolloff(magnitudes: Float32Array, freqResolution: number): number {
+  let totalWeightedPower = 0;
+
+  // First pass: compute total A-weighted power
+  for (let k = 1; k < magnitudes.length; k++) {
+    const freq = k * freqResolution;
+    if (freq < 20) continue;
+
+    const aWeight = Math.pow(10, aWeighting(freq) / 20);
+    const power = magnitudes[k] * magnitudes[k];
+    totalWeightedPower += power * aWeight * aWeight;
+  }
+
+  if (totalWeightedPower <= 0) return 0;
+
+  // Second pass: find 85% rolloff point
+  const threshold = 0.85 * totalWeightedPower;
+  let cumPower = 0;
+
+  for (let k = 1; k < magnitudes.length; k++) {
+    const freq = k * freqResolution;
+    if (freq < 20) continue;
+
+    const aWeight = Math.pow(10, aWeighting(freq) / 20);
+    const power = magnitudes[k] * magnitudes[k];
+    cumPower += power * aWeight * aWeight;
+
+    if (cumPower >= threshold) {
+      return freq;
+    }
+  }
+
+  return magnitudes.length * freqResolution;
+}
+
 function computeSpectralTilt(magnitudes: Float32Array, freqResolution: number): number {
   const minBin = Math.max(1, Math.floor(100 / freqResolution));
   const maxBin = Math.min(magnitudes.length - 1, Math.floor(10000 / freqResolution));
@@ -261,6 +327,8 @@ function computeSibilanceIndex(magnitudes: Float32Array, freqResolution: number)
 function computeSpectralFeatures(mono: Float32Array, fs: number): {
   centroid: number;
   rolloff: number;
+  centroidWeighted: number;
+  rolloffWeighted: number;
   tilt: number;
   flatness: number;
   harshness: number;
@@ -277,7 +345,8 @@ function computeSpectralFeatures(mono: Float32Array, fs: number): {
 
   if (totalSamples < fftSize) {
     return {
-      centroid: 0, rolloff: 0, tilt: 0, flatness: 0, harshness: 0, sibilance: 0,
+      centroid: 0, rolloff: 0, centroidWeighted: 0, rolloffWeighted: 0,
+      tilt: 0, flatness: 0, harshness: 0, sibilance: 0,
       harshnessWeighted: 0, sibilanceWeighted: 0, tiltWeighted: 0,
       balanceStatus: "balanced", balanceNote: null
     };
@@ -308,26 +377,29 @@ function computeSpectralFeatures(mono: Float32Array, fs: number): {
 
     fft(real, imag);
 
-    let totalEnergy = 0;
+    // Compute magnitudes and power for this frame
+    let totalPower = 0;
     for (let k = 0; k < freqBins; k++) {
       const mag = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
       avgMagnitudes[k] += mag;
-      totalEnergy += mag;
+      totalPower += mag * mag; // Power = mag²
     }
 
-    if (totalEnergy > 0) {
-      let weightedSum = 0;
+    if (totalPower > 0) {
+      // Power-based centroid: weight frequencies by power (mag²)
+      let weightedPowerSum = 0;
       for (let k = 0; k < freqBins; k++) {
-        const mag = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
-        weightedSum += k * freqResolution * mag;
+        const power = real[k] * real[k] + imag[k] * imag[k];
+        weightedPowerSum += k * freqResolution * power;
       }
-      totalCentroid += weightedSum / totalEnergy;
+      totalCentroid += weightedPowerSum / totalPower;
 
-      let cumEnergy = 0;
-      const threshold = 0.85 * totalEnergy;
+      // Power-based rolloff: 85% of total power
+      let cumPower = 0;
+      const threshold = 0.85 * totalPower;
       for (let k = 0; k < freqBins; k++) {
-        cumEnergy += Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
-        if (cumEnergy >= threshold) {
+        cumPower += real[k] * real[k] + imag[k] * imag[k];
+        if (cumPower >= threshold) {
           totalRolloff += k * freqResolution;
           break;
         }
@@ -350,12 +422,18 @@ function computeSpectralFeatures(mono: Float32Array, fs: number): {
   const sibilanceWeighted = computeWeightedSibilance(avgMagnitudes, freqResolution);
   const tiltWeighted = computeWeightedSpectralTilt(avgMagnitudes, freqResolution);
 
+  // A-weighted spectral centroid and rolloff (power-based)
+  const centroidWeighted = computeAWeightedCentroid(avgMagnitudes, freqResolution);
+  const rolloffWeighted = computeAWeightedRolloff(avgMagnitudes, freqResolution);
+
   const centroid = validFrames > 0 ? totalCentroid / validFrames : 0;
   const balance = computeSpectralBalanceStatus(tilt, harshness, centroid);
 
   return {
     centroid,
     rolloff: validFrames > 0 ? totalRolloff / validFrames : 0,
+    centroidWeighted,
+    rolloffWeighted,
     tilt,
     flatness,
     harshness,
@@ -405,6 +483,8 @@ export function computeBandEnergiesMono(mono: Float32Array, fs: number): Spectra
     harshnessIndexWeighted: spectralFeatures.harshnessWeighted,
     sibilanceIndexWeighted: spectralFeatures.sibilanceWeighted,
     spectralTiltWeightedDBPerOctave: spectralFeatures.tiltWeighted,
+    spectralCentroidWeightedHz: spectralFeatures.centroidWeighted,
+    spectralRolloffWeightedHz: spectralFeatures.rolloffWeighted,
     spectralBalanceStatus: spectralFeatures.balanceStatus,
     spectralBalanceNote: spectralFeatures.balanceNote
   };
