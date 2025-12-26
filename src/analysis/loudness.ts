@@ -24,7 +24,7 @@ interface EbuR128Module {
   ebur128_integrated_mono: (rate: number, samples: Float32Array) => number;
   ebur128_integrated_stereo: (rate: number, left: Float32Array, right: Float32Array) => number;
   ebur128_true_peak_mono: (rate: number, samples: Float32Array) => number;
-  ebur128_true_peak_stereo: (rate: number, left: Float32Array, right: Float32Array) => number[];
+  ebur128_true_peak_stereo: (rate: number, left: Float32Array, right: Float32Array) => number;
 }
 
 // Module state
@@ -486,8 +486,7 @@ export function computeLoudness(sampleRate: number, channels: Float32Array[]): L
       const left = channels[0];
       const right = channels[1];
       integratedLUFS = ebur128Module.ebur128_integrated_stereo(sampleRate, left, right);
-      const tpArr = ebur128Module.ebur128_true_peak_stereo(sampleRate, left, right);
-      ebur128TruePeak = Math.max(Number(tpArr[0] ?? 0), Number(tpArr[1] ?? 0));
+      ebur128TruePeak = ebur128Module.ebur128_true_peak_stereo(sampleRate, left, right);
     }
   } else {
     // Pure JS fallback: use our own K-weighted loudness calculation
