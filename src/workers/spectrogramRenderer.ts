@@ -135,13 +135,14 @@ function freqBinToY(
 
 /**
  * Render spectrogram to ImageBitmap
- * Uses WebGL when available for GPU acceleration, falls back to 2D Canvas.
+ * Uses 2D Canvas by default; WebGL available but disabled due to compatibility issues.
  */
 export function renderSpectrogram(
   spectrogram: SpectrogramData,
   config: SpectrogramRenderConfig
 ): ImageBitmap {
-  const { preferWebGL = true } = config;
+  // WebGL disabled by default - float texture support varies across browsers/workers
+  const { preferWebGL = false } = config;
 
   // Try WebGL first if preferred
   if (preferWebGL) {
