@@ -10,11 +10,10 @@ import { formatTime, getRatingClass, calculateTrackScores } from '../helpers/ind
 import { renderMeter, renderMetricRow } from './metrics.js';
 import { renderPlatformCard } from './platforms.js';
 
-// Helper to render spectrogram to canvas (inline header version)
+// Helper to render spectrogram to canvas (inline header version for simple mode)
 function renderSpectrogramInline(bitmap: ImageBitmap): TemplateResult {
   const canvasRef: Ref<HTMLCanvasElement> = createRef();
 
-  // Use requestAnimationFrame to ensure canvas is in DOM before drawing
   setTimeout(() => {
     const canvas = canvasRef.value;
     if (canvas && bitmap) {
@@ -30,6 +29,29 @@ function renderSpectrogramInline(bitmap: ImageBitmap): TemplateResult {
   return html`
     <div class="spectrogram-inline">
       <canvas ${ref(canvasRef)} class="spectrogram-canvas-inline"></canvas>
+    </div>
+  `;
+}
+
+// Helper to render spectrogram below header (for advanced mode)
+function renderSpectrogramExpanded(bitmap: ImageBitmap): TemplateResult {
+  const canvasRef: Ref<HTMLCanvasElement> = createRef();
+
+  setTimeout(() => {
+    const canvas = canvasRef.value;
+    if (canvas && bitmap) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        ctx.drawImage(bitmap, 0, 0);
+      }
+    }
+  }, 0);
+
+  return html`
+    <div class="spectrogram-container">
+      <canvas ${ref(canvasRef)} class="spectrogram-canvas"></canvas>
     </div>
   `;
 }
@@ -51,7 +73,6 @@ export function renderTrackCard(
           <div class="track-name">${t.parameters.filename}</div>
           <div class="track-meta">${t.parameters.durationFormatted} · ${t.parameters.sampleRate ?? "—"} Hz · ${t.parameters.channels ?? "—"}ch${t.parameters.effectiveBitDepth ? ` · ~${t.parameters.effectiveBitDepth}bit` : ''}</div>
         </div>
-        ${spectrogram ? renderSpectrogramInline(spectrogram) : html`<div class="spectrogram-placeholder"></div>`}
         <div class="track-badges">
           <span class="badge ${statusClass}">${t.distributionReady ? 'OK' : 'Check'}</span>
           <span class="badge badge-neutral">${t.loudness.integratedLUFS?.toFixed(1) ?? "—"} LUFS</span>
@@ -60,6 +81,7 @@ export function renderTrackCard(
       </div>
 
       <div class="track-content">
+        ${spectrogram ? renderSpectrogramExpanded(spectrogram) : null}
         <div class="track-content-inner">
           <!-- LOUDNESS MODULE (EBU R128) -->
           <div class="metric-module primary">

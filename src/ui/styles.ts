@@ -1553,17 +1553,17 @@ export const appStyles = css`
       margin: 0 10px 8px;
     }
 
-    /* === SPECTROGRAM (Inline in header) === */
+    /* === SPECTROGRAM (Inline in header - simple mode) === */
     .spectrogram-inline {
-      flex: 1;
-      min-width: 80px;
-      max-width: 280px;
-      height: 36px;
-      border-radius: 4px;
+      flex: 2;
+      min-width: 100px;
+      height: 32px;
+      border-radius: 3px;
       overflow: hidden;
       background: transparent;
-      opacity: 0.85;
+      opacity: 0.9;
       transition: opacity 0.15s ease;
+      margin: 0 8px;
     }
 
     .track-header:hover .spectrogram-inline {
@@ -1576,18 +1576,18 @@ export const appStyles = css`
       height: 100%;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
-      border-radius: 4px;
+      border-radius: 3px;
     }
 
     .spectrogram-placeholder {
-      flex: 1;
-      min-width: 80px;
-      max-width: 280px;
-      height: 36px;
+      flex: 2;
+      min-width: 100px;
+      height: 32px;
+      margin: 0 8px;
     }
 
     /* Hide spectrogram on very narrow screens */
-    @media (max-width: 500px) {
+    @media (max-width: 480px) {
       .spectrogram-inline,
       .spectrogram-placeholder {
         display: none;
