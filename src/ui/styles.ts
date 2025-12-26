@@ -1553,7 +1553,48 @@ export const appStyles = css`
       margin: 0 10px 8px;
     }
 
-    /* === SPECTROGRAM === */
+    /* === SPECTROGRAM (Inline in header) === */
+    .spectrogram-inline {
+      flex: 1;
+      min-width: 80px;
+      max-width: 280px;
+      height: 36px;
+      border-radius: 4px;
+      overflow: hidden;
+      background: transparent;
+      opacity: 0.85;
+      transition: opacity 0.15s ease;
+    }
+
+    .track-header:hover .spectrogram-inline {
+      opacity: 1;
+    }
+
+    .spectrogram-canvas-inline {
+      display: block;
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      border-radius: 4px;
+    }
+
+    .spectrogram-placeholder {
+      flex: 1;
+      min-width: 80px;
+      max-width: 280px;
+      height: 36px;
+    }
+
+    /* Hide spectrogram on very narrow screens */
+    @media (max-width: 500px) {
+      .spectrogram-inline,
+      .spectrogram-placeholder {
+        display: none;
+      }
+    }
+
+    /* Legacy container style (if needed) */
     .spectrogram-container {
       margin: 8px 10px;
       border-radius: 4px;

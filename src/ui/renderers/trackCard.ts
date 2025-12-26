@@ -10,8 +10,8 @@ import { formatTime, getRatingClass, calculateTrackScores } from '../helpers/ind
 import { renderMeter, renderMetricRow } from './metrics.js';
 import { renderPlatformCard } from './platforms.js';
 
-// Helper to render spectrogram to canvas
-function renderSpectrogramCanvas(bitmap: ImageBitmap): TemplateResult {
+// Helper to render spectrogram to canvas (inline header version)
+function renderSpectrogramInline(bitmap: ImageBitmap): TemplateResult {
   const canvasRef: Ref<HTMLCanvasElement> = createRef();
 
   // Use requestAnimationFrame to ensure canvas is in DOM before drawing
@@ -28,8 +28,8 @@ function renderSpectrogramCanvas(bitmap: ImageBitmap): TemplateResult {
   }, 0);
 
   return html`
-    <div class="spectrogram-container">
-      <canvas ${ref(canvasRef)} class="spectrogram-canvas"></canvas>
+    <div class="spectrogram-inline">
+      <canvas ${ref(canvasRef)} class="spectrogram-canvas-inline"></canvas>
     </div>
   `;
 }
@@ -51,6 +51,7 @@ export function renderTrackCard(
           <div class="track-name">${t.parameters.filename}</div>
           <div class="track-meta">${t.parameters.durationFormatted} · ${t.parameters.sampleRate ?? "—"} Hz · ${t.parameters.channels ?? "—"}ch${t.parameters.effectiveBitDepth ? ` · ~${t.parameters.effectiveBitDepth}bit` : ''}</div>
         </div>
+        ${spectrogram ? renderSpectrogramInline(spectrogram) : html`<div class="spectrogram-placeholder"></div>`}
         <div class="track-badges">
           <span class="badge ${statusClass}">${t.distributionReady ? 'OK' : 'Check'}</span>
           <span class="badge badge-neutral">${t.loudness.integratedLUFS?.toFixed(1) ?? "—"} LUFS</span>
@@ -59,7 +60,6 @@ export function renderTrackCard(
       </div>
 
       <div class="track-content">
-        ${spectrogram ? renderSpectrogramCanvas(spectrogram) : null}
         <div class="track-content-inner">
           <!-- LOUDNESS MODULE (EBU R128) -->
           <div class="metric-module primary">
@@ -289,14 +289,13 @@ export function renderSimpleTrackCard(t: TrackAnalysis, spectrogram?: ImageBitma
           <div class="track-name">${t.parameters.filename}</div>
           <div class="track-meta">${t.parameters.durationFormatted} · ${t.parameters.sampleRate ?? "—"} Hz</div>
         </div>
+        ${spectrogram ? renderSpectrogramInline(spectrogram) : html`<div class="spectrogram-placeholder"></div>`}
         <div class="track-badges">
           <span class="badge ${statusClass}">${t.distributionReady ? 'OK' : 'Check'}</span>
         </div>
       </div>
 
       ${primaryConcern ? html`<div class="primary-concern">⚠ ${primaryConcern}</div>` : null}
-
-      ${spectrogram ? renderSpectrogramCanvas(spectrogram) : null}
 
       <div class="simple-metrics">
         <div class="simple-metric">
