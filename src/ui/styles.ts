@@ -724,17 +724,15 @@ export const appStyles = css`
     }
 
     .track-info {
-      flex: 1;
-      min-width: 0;
+      flex: 0 0 auto;
+      max-width: 50%;
     }
 
     .track-name {
       font-weight: 500;
       color: var(--text-primary);
       font-size: 0.85rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      word-break: break-word;
     }
 
     .track-meta {
@@ -1555,8 +1553,9 @@ export const appStyles = css`
 
     /* === SPECTROGRAM (Inline in header - simple mode) === */
     .spectrogram-inline {
-      flex: 2;
-      min-width: 100px;
+      flex: 1 1 auto;
+      min-width: 80px;
+      max-width: 300px;
       height: 32px;
       border-radius: 3px;
       overflow: hidden;
@@ -1580,8 +1579,9 @@ export const appStyles = css`
     }
 
     .spectrogram-placeholder {
-      flex: 2;
-      min-width: 100px;
+      flex: 1 1 auto;
+      min-width: 80px;
+      max-width: 300px;
       height: 32px;
       margin: 0 8px;
     }
