@@ -12,7 +12,8 @@ import { renderReport, type AlbumReportContext } from "./renderers/index.js";
 type WorkerMsg =
   | { type: "progress"; current: number; total: number; filename: string; stage?: string; stageProgress?: number }
   | { type: "result"; album: AlbumAnalysis }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "spectrogram"; trackNumber: number; bitmap: ImageBitmap };
 
 export class AlbumAnalyzerApp extends LitElement {
   static styles = appStyles;
@@ -26,6 +27,7 @@ export class AlbumAnalyzerApp extends LitElement {
     expandedTracks: { state: true },
     jsonVisible: { state: true },
     viewMode: { state: true },
+    spectrograms: { state: true },
   };
 
   private busy = false;
@@ -36,6 +38,7 @@ export class AlbumAnalyzerApp extends LitElement {
   private expandedTracks: Set<number> = new Set();
   private jsonVisible = false;
   private viewMode: 'simple' | 'advanced' = 'simple';
+  private spectrograms: Map<number, ImageBitmap> = new Map();
   private worker: Worker | null = null;
   private lightDomInput: HTMLInputElement | null = null;
 
@@ -104,6 +107,10 @@ export class AlbumAnalyzerApp extends LitElement {
           this.progress = null;
           this.status = "Error";
           this.requestUpdate();
+        } else if (msg.type === "spectrogram") {
+          this.spectrograms.set(msg.trackNumber, msg.bitmap);
+          this.spectrograms = new Map(this.spectrograms); // Trigger reactivity
+          this.requestUpdate();
         }
       };
     } catch (e) {
@@ -142,6 +149,7 @@ export class AlbumAnalyzerApp extends LitElement {
     this.album = null;
     this.expandedTracks = new Set();
     this.jsonVisible = false;
+    this.spectrograms = new Map();
 
     const audio = files.filter((f) => {
       const extMatch = /\.(wav|flac|aiff|aif|mp3|m4a|aac|ogg)$/i.test(f.name);
@@ -200,7 +208,13 @@ export class AlbumAnalyzerApp extends LitElement {
       }
 
       this.worker.postMessage(
-        { type: "analyze", albumName: "Album", tracks: decodedTracks },
+        {
+          type: "analyze",
+          albumName: "Album",
+          tracks: decodedTracks,
+          generateSpectrograms: true,
+          spectrogramConfig: { width: 400, height: 80 }
+        },
         transferables
       );
     } catch (e) {
@@ -314,6 +328,7 @@ export class AlbumAnalyzerApp extends LitElement {
       viewMode: this.viewMode,
       expandedTracks: this.expandedTracks,
       jsonVisible: this.jsonVisible,
+      spectrograms: this.spectrograms,
       onToggleTrack: (trackNumber: number) => this.toggleTrack(trackNumber),
       onToggleJson: () => { this.jsonVisible = !this.jsonVisible; this.requestUpdate(); },
       onViewModeChange: (mode: 'simple' | 'advanced') => { this.viewMode = mode; this.requestUpdate(); }

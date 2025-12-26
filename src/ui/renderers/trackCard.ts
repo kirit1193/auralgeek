@@ -4,15 +4,41 @@
  */
 
 import { html, TemplateResult } from 'lit';
+import { ref, createRef, Ref } from 'lit/directives/ref.js';
 import type { TrackAnalysis } from '../../core/types.js';
 import { formatTime, getRatingClass, calculateTrackScores } from '../helpers/index.js';
 import { renderMeter, renderMetricRow } from './metrics.js';
 import { renderPlatformCard } from './platforms.js';
 
+// Helper to render spectrogram to canvas
+function renderSpectrogramCanvas(bitmap: ImageBitmap): TemplateResult {
+  const canvasRef: Ref<HTMLCanvasElement> = createRef();
+
+  // Use requestAnimationFrame to ensure canvas is in DOM before drawing
+  setTimeout(() => {
+    const canvas = canvasRef.value;
+    if (canvas && bitmap) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        ctx.drawImage(bitmap, 0, 0);
+      }
+    }
+  }, 0);
+
+  return html`
+    <div class="spectrogram-container">
+      <canvas ${ref(canvasRef)} class="spectrogram-canvas"></canvas>
+    </div>
+  `;
+}
+
 export function renderTrackCard(
   t: TrackAnalysis,
   isExpanded: boolean,
-  onToggle: () => void
+  onToggle: () => void,
+  spectrogram?: ImageBitmap
 ): TemplateResult {
   const statusClass = t.distributionReady ? "badge-ok" : t.issues.length ? "badge-bad" : "badge-warn";
   const scores = calculateTrackScores(t);
@@ -33,6 +59,7 @@ export function renderTrackCard(
       </div>
 
       <div class="track-content">
+        ${spectrogram ? renderSpectrogramCanvas(spectrogram) : null}
         <div class="track-content-inner">
           <!-- LOUDNESS MODULE (EBU R128) -->
           <div class="metric-module primary">
@@ -196,7 +223,7 @@ export function renderTrackCard(
   `;
 }
 
-export function renderSimpleTrackCard(t: TrackAnalysis): TemplateResult {
+export function renderSimpleTrackCard(t: TrackAnalysis, spectrogram?: ImageBitmap): TemplateResult {
   const statusClass = t.distributionReady ? "badge-ok" : t.issues.length ? "badge-bad" : "badge-warn";
 
   const lufsStatus = (v: number | null) => {
@@ -268,6 +295,8 @@ export function renderSimpleTrackCard(t: TrackAnalysis): TemplateResult {
       </div>
 
       ${primaryConcern ? html`<div class="primary-concern">⚠ ${primaryConcern}</div>` : null}
+
+      ${spectrogram ? renderSpectrogramCanvas(spectrogram) : null}
 
       <div class="simple-metrics">
         <div class="simple-metric">

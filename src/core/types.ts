@@ -261,6 +261,8 @@ export interface TrackAnalysis {
   enhancedWarnings?: AnalysisIssue[];
   // One-line summary of primary concern (4.4C)
   primaryConcern?: string;
+  // Spectrogram visualization (optional - computed on demand)
+  spectrogram?: SpectrogramData;
 }
 
 export interface AlbumSummary {
@@ -323,6 +325,19 @@ export interface AlbumSummary {
     trackNumber: number;
     reason: string; // e.g., "significantly louder and brighter than album median"
   }[];
+}
+
+// === Spectrogram visualization data ===
+export interface SpectrogramData {
+  magnitudes: Float32Array[];  // [time][frequency] in dB
+  timeFrames: number;
+  freqBins: number;
+  timeResolution: number;      // seconds per time frame
+  freqResolution: number;      // Hz per frequency bin
+  sampleRate: number;
+  fftSize: number;
+  minDB: number;
+  maxDB: number;
 }
 
 // === NEW: Reproducibility metadata (5.2) ===

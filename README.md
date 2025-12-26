@@ -9,6 +9,7 @@ Privacy-first audio analysis tool that runs **entirely in your browser** - no up
 - **Stereo Analysis**: Mid/side energy, stereo width, correlation, mono compatibility
 - **Spectral Analysis**: Power-based spectral centroid/rolloff, A-weighted perceptual metrics, harshness/sibilance indices
 - **Musical Analysis**: Tempo (BPM), key detection, beat regularity
+- **Spectrogram Visualization**: Time-frequency display with Viridis colormap and logarithmic frequency scale
 - **Distribution Readiness**: Checks against streaming platform requirements
 
 ## Tech Stack
@@ -17,7 +18,8 @@ Privacy-first audio analysis tool that runs **entirely in your browser** - no up
 - **ebur128-wasm** - WASM-based EBU R128 loudness measurement (4x oversampling per ITU-R BS.1770-4)
 - **mediainfo.js** - WASM container/codec metadata extraction
 - **Web Audio API** - Audio decoding and DSP
-- **Web Workers** - Non-blocking analysis pipeline
+- **Web Workers** - Non-blocking analysis pipeline with buffer pooling
+- **OffscreenCanvas** - Worker-thread spectrogram rendering with ImageBitmap transfer
 - **Vitest** - Unit testing with synthetic WAV fixtures
 
 ## Local Development

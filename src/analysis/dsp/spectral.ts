@@ -6,6 +6,7 @@
 import { dbFromLinear } from '../../core/format.js';
 import { fft } from '../../utils/fft.js';
 import { onePoleLP, onePoleHP, bandpassFilter } from '../../utils/filters.js';
+import { dspPool } from '../../utils/bufferPool.js';
 
 export interface SpectralOut {
   highFreqEnergy8k16kDB: number;
@@ -362,13 +363,15 @@ function computeSpectralFeatures(mono: Float32Array, fs: number): {
 
   const frameSpacing = Math.floor((totalSamples - fftSize) / numFramesToAnalyze);
 
+  // Acquire reusable FFT buffers from pool
+  const real = dspPool.acquire(fftSize);
+  const imag = dspPool.acquire(fftSize);
+
   for (let frame = 0; frame < numFramesToAnalyze; frame++) {
     const start = frame * frameSpacing;
     if (start + fftSize > totalSamples) break;
 
-    const real = new Float32Array(fftSize);
-    const imag = new Float32Array(fftSize);
-
+    // Apply Hann window and prepare FFT input
     for (let i = 0; i < fftSize; i++) {
       const window = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / fftSize);
       real[i] = mono[start + i] * window;
@@ -408,6 +411,10 @@ function computeSpectralFeatures(mono: Float32Array, fs: number): {
       validFrames++;
     }
   }
+
+  // Release FFT buffers back to pool
+  dspPool.release(real);
+  dspPool.release(imag);
 
   for (let k = 0; k < freqBins; k++) {
     avgMagnitudes[k] /= validFrames || 1;

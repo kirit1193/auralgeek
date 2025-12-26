@@ -12,6 +12,7 @@ export interface AlbumReportContext {
   viewMode: 'simple' | 'advanced';
   expandedTracks: Set<number>;
   jsonVisible: boolean;
+  spectrograms?: Map<number, ImageBitmap>;
   onToggleTrack: (trackNumber: number) => void;
   onToggleJson: () => void;
   onViewModeChange: (mode: 'simple' | 'advanced') => void;
@@ -219,8 +220,8 @@ export function renderReport(album: AlbumAnalysis, ctx: AlbumReportContext): Tem
       </div>
       <div style="border-bottom: 1px solid var(--border-subtle); margin: 10px 0 14px;"></div>
       ${album.tracks.map((t: TrackAnalysis) => ctx.viewMode === 'simple'
-        ? renderSimpleTrackCard(t)
-        : renderTrackCard(t, ctx.expandedTracks.has(t.trackNumber), () => ctx.onToggleTrack(t.trackNumber))
+        ? renderSimpleTrackCard(t, ctx.spectrograms?.get(t.trackNumber))
+        : renderTrackCard(t, ctx.expandedTracks.has(t.trackNumber), () => ctx.onToggleTrack(t.trackNumber), ctx.spectrograms?.get(t.trackNumber))
       )}
     </div>
 

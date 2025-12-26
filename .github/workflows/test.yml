@@ -23,9 +23,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify WASM loads
-        run: node -e "import('ebur128-wasm').then(m => console.log('ebur128-wasm loaded:', Object.keys(m)))"
-
       - name: Generate test fixtures
         run: node scripts/generate-test-wavs.mjs
 

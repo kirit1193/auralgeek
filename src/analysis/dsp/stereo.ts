@@ -6,6 +6,7 @@
 import { dbFromLinear, clamp } from '../../core/format.js';
 import { fft } from '../../utils/fft.js';
 import { onePoleLP, onePoleHP } from '../../utils/filters.js';
+import { dspPool } from '../../utils/bufferPool.js';
 
 export interface StereoOut {
   midEnergyDB: number | null;
@@ -164,9 +165,14 @@ function computeEnergyWeightedCorrelation(
   return totalWeight > 0 ? weightedCorrSum / totalWeight : 0;
 }
 
-function computeChannelCentroid(channel: Float32Array, start: number, fftSize: number, sampleRate: number): number {
-  const real = new Float32Array(fftSize);
-  const imag = new Float32Array(fftSize);
+function computeChannelCentroid(
+  channel: Float32Array,
+  start: number,
+  fftSize: number,
+  sampleRate: number,
+  real: Float32Array,
+  imag: Float32Array
+): number {
   const freqResolution = sampleRate / fftSize;
 
   for (let i = 0; i < fftSize; i++) {
@@ -207,12 +213,16 @@ function computeSpectralAsymmetry(
 
   const frameSpacing = Math.floor((n - fftSize) / numFrames);
 
+  // Acquire reusable FFT buffers from pool
+  const real = dspPool.acquire(fftSize);
+  const imag = dspPool.acquire(fftSize);
+
   for (let frame = 0; frame < numFrames; frame++) {
     const start = frame * frameSpacing;
     if (start + fftSize > n) break;
 
-    const centroidL = computeChannelCentroid(L, start, fftSize, sampleRate);
-    const centroidR = computeChannelCentroid(R, start, fftSize, sampleRate);
+    const centroidL = computeChannelCentroid(L, start, fftSize, sampleRate, real, imag);
+    const centroidR = computeChannelCentroid(R, start, fftSize, sampleRate, real, imag);
 
     if (centroidL > 0 && centroidR > 0) {
       totalCentroidL += centroidL;
@@ -220,6 +230,10 @@ function computeSpectralAsymmetry(
       validFrames++;
     }
   }
+
+  // Release FFT buffers back to pool
+  dspPool.release(real);
+  dspPool.release(imag);
 
   if (validFrames === 0) return { asymmetryHz: 0, note: null };
 

@@ -5,6 +5,7 @@
 
 import { fft } from '../../utils/fft.js';
 import { pearsonCorrelation, rotateArray } from '../../utils/math.js';
+import { dspPool } from '../../utils/bufferPool.js';
 
 export interface KeyCandidate {
   key: string;
@@ -35,10 +36,13 @@ function frequencyToPitchClass(freq: number): number {
   return Math.round(midiNote) % 12;
 }
 
-function computeFFTMagnitudes(samples: Float32Array, fftSize: number): Float32Array {
-  const real = new Float32Array(fftSize);
-  const imag = new Float32Array(fftSize);
-
+function computeFFTMagnitudes(
+  samples: Float32Array,
+  fftSize: number,
+  real: Float32Array,
+  imag: Float32Array,
+  magnitudes: Float32Array
+): void {
   for (let i = 0; i < fftSize; i++) {
     const window = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / fftSize);
     real[i] = (samples[i] ?? 0) * window;
@@ -47,12 +51,9 @@ function computeFFTMagnitudes(samples: Float32Array, fftSize: number): Float32Ar
 
   fft(real, imag);
 
-  const magnitudes = new Float32Array(fftSize / 2);
   for (let i = 0; i < fftSize / 2; i++) {
     magnitudes[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);
   }
-
-  return magnitudes;
 }
 
 export function computeChromagram(mono: Float32Array, sampleRate: number): number[] {
@@ -61,8 +62,15 @@ export function computeChromagram(mono: Float32Array, sampleRate: number): numbe
   const hopSize = Math.floor(fftSize / 2);
   const freqResolution = sampleRate / fftSize;
 
+  // Acquire reusable buffers from pool
+  const real = dspPool.acquire(fftSize);
+  const imag = dspPool.acquire(fftSize);
+  const magnitudes = dspPool.acquire(fftSize / 2);
+
   for (let pos = 0; pos + fftSize < mono.length; pos += hopSize) {
-    const magnitudes = computeFFTMagnitudes(mono.slice(pos, pos + fftSize), fftSize);
+    // Copy samples to real buffer with window
+    const samples = mono.subarray(pos, pos + fftSize);
+    computeFFTMagnitudes(samples, fftSize, real, imag, magnitudes);
 
     for (let bin = 1; bin < fftSize / 2; bin++) {
       const freq = bin * freqResolution;
@@ -72,6 +80,11 @@ export function computeChromagram(mono: Float32Array, sampleRate: number): numbe
       chromagram[pitchClass] += magnitudes[bin] * magnitudes[bin];
     }
   }
+
+  // Release buffers back to pool
+  dspPool.release(real);
+  dspPool.release(imag);
+  dspPool.release(magnitudes);
 
   const sum = chromagram.reduce((a, b) => a + b, 0);
   if (sum > 0) {

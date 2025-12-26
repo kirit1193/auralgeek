@@ -1552,4 +1552,21 @@ export const appStyles = css`
       border-left: 2px solid var(--led-amber);
       margin: 0 10px 8px;
     }
+
+    /* === SPECTROGRAM === */
+    .spectrogram-container {
+      margin: 8px 10px;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-deep);
+    }
+
+    .spectrogram-canvas {
+      display: block;
+      width: 100%;
+      height: 80px;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
 `;
