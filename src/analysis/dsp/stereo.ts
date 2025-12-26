@@ -183,17 +183,19 @@ function computeChannelCentroid(
 
   fft(real, imag);
 
-  let totalEnergy = 0;
-  let weightedSum = 0;
+  // Power-based centroid: weight frequencies by power (mag²)
+  // Matches spectral.ts for consistency
+  let totalPower = 0;
+  let weightedPowerSum = 0;
 
   for (let k = 1; k < fftSize / 2; k++) {
-    const mag = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
+    const power = real[k] * real[k] + imag[k] * imag[k];
     const freq = k * freqResolution;
-    totalEnergy += mag;
-    weightedSum += mag * freq;
+    totalPower += power;
+    weightedPowerSum += power * freq;
   }
 
-  return totalEnergy > 0 ? weightedSum / totalEnergy : 0;
+  return totalPower > 0 ? weightedPowerSum / totalPower : 0;
 }
 
 function computeSpectralAsymmetry(

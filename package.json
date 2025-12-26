@@ -9,7 +9,11 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:ui": "playwright test",
-    "copy-wasm": "node ./scripts/copy-wasm.mjs"
+    "copy-wasm": "node ./scripts/copy-wasm.mjs",
+    "bench": "node scripts/benchmark-fft.mjs && node scripts/benchmark-analysis.mjs",
+    "bench:fft": "node scripts/benchmark-fft.mjs",
+    "bench:analysis": "node scripts/benchmark-analysis.mjs",
+    "bench:spectrogram": "node scripts/benchmark-spectrogram.mjs"
   },
   "dependencies": {
     "ebur128-wasm": "^3.0.0",

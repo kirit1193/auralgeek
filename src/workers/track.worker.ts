@@ -4,6 +4,7 @@
  *
  * Handles analysis of a single track for use with the worker pool.
  * Separate from analyzer.worker.ts to enable parallel processing.
+ * Supports warm-up for WASM pre-initialization.
  */
 
 import type { TrackAnalysis } from '../core/types.js';
@@ -11,6 +12,12 @@ import { analyzeTrack, type DecodedTrackData } from './trackAnalyzer.js';
 import { computeSpectrogram, downsampleSpectrogram } from '../analysis/spectrogram.js';
 import { renderSpectrogram, isOffscreenCanvasSupported } from './spectrogramRenderer.js';
 import { dspPool, clearWindowCache } from '../utils/bufferPool.js';
+import { initWasmFFT } from '../utils/fft-wasm.js';
+import { initEbuR128 } from '../analysis/loudness.js';
+
+interface WarmUpRequest {
+  type: 'warm-up';
+}
 
 interface AnalyzeTrackRequest {
   type: 'analyze-track';
@@ -20,15 +27,32 @@ interface AnalyzeTrackRequest {
   spectrogramConfig?: { width: number; height: number };
 }
 
+type WorkerRequest = WarmUpRequest | AnalyzeTrackRequest;
+
 type WorkerMessage =
   | { type: 'progress'; stage: string; stageProgress: number }
   | { type: 'result'; track: TrackAnalysis }
   | { type: 'spectrogram'; bitmap: ImageBitmap }
+  | { type: 'ready'; wasmFFT: boolean; wasmEbuR128: boolean }
   | { type: 'error'; message: string };
 
 const STAGES = ['Loudness', 'Dynamics', 'Stereo', 'Spectral', 'Musical', 'Streaming'] as const;
 
-self.onmessage = async (ev: MessageEvent<AnalyzeTrackRequest>) => {
+self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
+  // Handle warm-up request: pre-initialize WASM modules
+  if (ev.data.type === 'warm-up') {
+    const [wasmFFT, wasmEbuR128] = await Promise.all([
+      initWasmFFT(),
+      initEbuR128()
+    ]);
+    (self as any).postMessage({
+      type: 'ready',
+      wasmFFT,
+      wasmEbuR128
+    } satisfies WorkerMessage);
+    return;
+  }
+
   if (ev.data.type !== 'analyze-track') return;
 
   const { track: decoded, trackNumber, generateSpectrogram, spectrogramConfig } = ev.data;

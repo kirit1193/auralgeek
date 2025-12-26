@@ -14,17 +14,59 @@
  *
  * - Fallback: truePeak.ts (ITU-R BS.1770-4 Annex 2)
  *   48-tap polyphase FIR filter split into 4 phases (12 taps each)
- *   Used when ebur128-wasm returns invalid values
+ *   Used when ebur128-wasm is unavailable or returns invalid values
  */
-import {
-  ebur128_integrated_mono,
-  ebur128_integrated_stereo,
-  ebur128_true_peak_mono,
-  ebur128_true_peak_stereo
-} from "ebur128-wasm";
 
 import { dbFromLinear } from "../core/format";
-import { verifyTruePeak, computeSamplePeak } from "./truePeak";
+
+// Type for ebur128-wasm module (lazy loaded)
+interface EbuR128Module {
+  ebur128_integrated_mono: (rate: number, samples: Float32Array) => number;
+  ebur128_integrated_stereo: (rate: number, left: Float32Array, right: Float32Array) => number;
+  ebur128_true_peak_mono: (rate: number, samples: Float32Array) => number;
+  ebur128_true_peak_stereo: (rate: number, left: Float32Array, right: Float32Array) => number[];
+}
+
+// Module state
+let ebur128Module: EbuR128Module | null = null;
+let ebur128InitPromise: Promise<boolean> | null = null;
+let ebur128Available = false;
+
+/**
+ * Initialize the ebur128-wasm module.
+ * Returns true if WASM is available, false if falling back to JS.
+ * Safe to call multiple times - will only initialize once.
+ */
+export async function initEbuR128(): Promise<boolean> {
+  if (ebur128InitPromise) {
+    return ebur128InitPromise;
+  }
+
+  ebur128InitPromise = (async () => {
+    try {
+      // Dynamic import to avoid blocking module load
+      const mod = await import('ebur128-wasm');
+      ebur128Module = mod as EbuR128Module;
+      ebur128Available = true;
+      return true;
+    } catch {
+      // WASM not available, will use JS fallback
+      ebur128Available = false;
+      return false;
+    }
+  })();
+
+  return ebur128InitPromise;
+}
+
+/**
+ * Check if ebur128-wasm is currently available
+ */
+export function isEbuR128Available(): boolean {
+  return ebur128Available;
+}
+
+import { verifyTruePeak, computeSamplePeak, computeTruePeakMono, computeTruePeakStereo } from "./truePeak";
 
 export interface LoudnessResult {
   integratedLUFS: number;
@@ -426,20 +468,34 @@ function analyzePeakClustering(
 }
 
 export function computeLoudness(sampleRate: number, channels: Float32Array[]): LoudnessResult {
-  // Use ebur128-wasm for integrated loudness and true peak (gold standard)
-  // ebur128-wasm uses fixed 4x oversampling per ITU-R BS.1770-4
+  // Apply K-weighting for manual loudness calculations (needed for both paths)
+  const kWeightedChannels = applyKWeighting(channels, sampleRate);
+
+  // Try to use ebur128-wasm for integrated loudness and true peak (gold standard)
+  // Falls back to pure JS implementation if WASM not available
   let integratedLUFS: number;
   let ebur128TruePeak: number;
+  let usingWasm = false;
 
-  if (channels.length === 1) {
-    integratedLUFS = ebur128_integrated_mono(sampleRate, channels[0]);
-    ebur128TruePeak = ebur128_true_peak_mono(sampleRate, channels[0]);
+  if (ebur128Available && ebur128Module) {
+    usingWasm = true;
+    if (channels.length === 1) {
+      integratedLUFS = ebur128Module.ebur128_integrated_mono(sampleRate, channels[0]);
+      ebur128TruePeak = ebur128Module.ebur128_true_peak_mono(sampleRate, channels[0]);
+    } else {
+      const left = channels[0];
+      const right = channels[1];
+      integratedLUFS = ebur128Module.ebur128_integrated_stereo(sampleRate, left, right);
+      const tpArr = ebur128Module.ebur128_true_peak_stereo(sampleRate, left, right);
+      ebur128TruePeak = Math.max(Number(tpArr[0] ?? 0), Number(tpArr[1] ?? 0));
+    }
   } else {
-    const left = channels[0];
-    const right = channels[1];
-    integratedLUFS = ebur128_integrated_stereo(sampleRate, left, right);
-    const tpArr = ebur128_true_peak_stereo(sampleRate, left, right) as unknown as number[];
-    ebur128TruePeak = Math.max(Number(tpArr[0] ?? 0), Number(tpArr[1] ?? 0));
+    // Pure JS fallback: use our own K-weighted loudness calculation
+    integratedLUFS = computeIntegratedLoudness(kWeightedChannels, sampleRate, true);
+    // Use JS true peak implementation (ITU-R BS.1770-4 Annex 2)
+    ebur128TruePeak = channels.length === 1
+      ? computeTruePeakMono(channels[0])
+      : computeTruePeakStereo(channels);
   }
 
   // Sample peak (non-oversampled)
@@ -452,9 +508,6 @@ export function computeLoudness(sampleRate: number, channels: Float32Array[]): L
 
   // ISP margin (inter-sample peak headroom)
   const ispMarginDB = truePeakDBTP - samplePeakDBFS;
-
-  // Apply K-weighting for manual loudness calculations
-  const kWeightedChannels = applyKWeighting(channels, sampleRate);
 
   // Compute ungated integrated loudness
   const integratedUngatedLUFS = computeIntegratedLoudness(kWeightedChannels, sampleRate, false);

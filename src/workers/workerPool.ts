@@ -42,6 +42,7 @@ export interface WorkerPoolConfig {
 interface WorkerState {
   worker: Worker;
   busy: boolean;
+  ready: boolean;
   currentTrack: number | null;
 }
 
@@ -73,14 +74,34 @@ export function createWorkerPool(config?: WorkerPoolConfig): {
 
   console.log(`[WorkerPool] Creating pool with ${poolSize} workers`);
 
-  // Create workers
+  // Create workers and send warm-up messages
   const workers: WorkerState[] = [];
+  const warmupPromises: Promise<void>[] = [];
+
   for (let i = 0; i < poolSize; i++) {
     const worker = new Worker(
       new URL('./track.worker.ts', import.meta.url),
       { type: 'module' }
     );
-    workers.push({ worker, busy: false, currentTrack: null });
+    const state: WorkerState = { worker, busy: false, ready: false, currentTrack: null };
+    workers.push(state);
+
+    // Set up warm-up promise
+    const warmupPromise = new Promise<void>((resolve) => {
+      const handler = (ev: MessageEvent) => {
+        if (ev.data.type === 'ready') {
+          state.ready = true;
+          worker.removeEventListener('message', handler);
+          console.log(`[WorkerPool] Worker ${i} ready (FFT: ${ev.data.wasmFFT}, EBU R128: ${ev.data.wasmEbuR128})`);
+          resolve();
+        }
+      };
+      worker.addEventListener('message', handler);
+    });
+    warmupPromises.push(warmupPromise);
+
+    // Send warm-up message
+    worker.postMessage({ type: 'warm-up' });
   }
 
   let terminated = false;
@@ -90,6 +111,9 @@ export function createWorkerPool(config?: WorkerPoolConfig): {
     if (terminated) {
       throw new Error('Worker pool has been terminated');
     }
+
+    // Wait for all workers to be ready before starting analysis
+    await Promise.all(warmupPromises);
 
     const totalTracks = jobs.length;
     completedTracks = 0;
@@ -102,9 +126,9 @@ export function createWorkerPool(config?: WorkerPoolConfig): {
       reject: (error: Error) => void;
     }>();
 
-    // Find an available worker
+    // Find an available worker (must be ready and not busy)
     const getAvailableWorker = (): WorkerState | null => {
-      return workers.find(w => !w.busy) ?? null;
+      return workers.find(w => w.ready && !w.busy) ?? null;
     };
 
     // Assign a job to a worker
