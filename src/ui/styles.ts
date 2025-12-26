@@ -747,7 +747,6 @@ export const appStyles = css`
       gap: 8px;
       align-items: center;
       flex-shrink: 0;
-      margin-left: auto;
     }
 
     /* Hide secondary badge on very small screens */
@@ -1554,20 +1553,24 @@ export const appStyles = css`
 
     /* === SPECTROGRAM (Inline in header - simple mode) === */
     .spectrogram-inline {
-      flex: 1 1 auto;
-      min-width: 80px;
-      max-width: 300px;
-      height: 32px;
-      border-radius: 3px;
+      flex: 1 1 0;
+      min-width: 60px;
+      height: 28px;
+      border-radius: 4px;
       overflow: hidden;
-      background: transparent;
-      opacity: 0.9;
-      transition: opacity 0.15s ease;
-      margin: 0 8px;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border-subtle);
+      opacity: 0.85;
+      transition: opacity 0.15s ease, border-color 0.15s ease;
+      margin: 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .track-header:hover .spectrogram-inline {
       opacity: 1;
+      border-color: var(--border-panel);
     }
 
     .spectrogram-canvas-inline {
@@ -1580,11 +1583,10 @@ export const appStyles = css`
     }
 
     .spectrogram-placeholder {
-      flex: 1 1 auto;
-      min-width: 80px;
-      max-width: 300px;
-      height: 32px;
-      margin: 0 8px;
+      flex: 1 1 0;
+      min-width: 60px;
+      height: 28px;
+      margin: 0 14px;
     }
 
     /* Hide spectrogram on very narrow screens */
