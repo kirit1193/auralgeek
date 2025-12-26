@@ -20,6 +20,11 @@ export interface AudioParameters {
   // Codec suspicion score (combines low effective bit depth, spectral rolloff, pre-echo)
   codecSuspicionScore?: number; // 0-100
   codecSuspicionNote?: string; // e.g., "May indicate lossy or heavily processed source"
+
+  // === NEW: Enhanced Codec Quality Detection ===
+  spectralCutoffHz?: number; // Detected HF cutoff (lossy indicator)
+  codecQualityScore?: number; // 0-100, higher = better quality
+  codecQualityNote?: string;
 }
 
 // EBU R128 / ITU BS.1770 Loudness Suite
@@ -68,6 +73,19 @@ export interface LoudnessMetrics {
 
   // === NEW: TP-to-loudness at loudest section (1.2B) ===
   tpToLoudnessAtPeak: number | null; // TP - short-term loudness at loudest section
+
+  // === NEW: Loudness Correction Recommendation ===
+  loudnessCorrectionDB: number | null; // Gain to reach -14 LUFS
+  loudnessCorrectionNote: string | null; // e.g., "-2.1 dB to reach -14 LUFS"
+
+  // === NEW: Per-Band Loudness (Phase 2.1) ===
+  perBandLoudness: {
+    subLUFS: number | null;        // 20-80 Hz
+    bassLUFS: number | null;       // 80-250 Hz
+    midLUFS: number | null;        // 250-2k Hz
+    presenceLUFS: number | null;   // 2-6k Hz
+    brillianceLUFS: number | null; // 6-20k Hz
+  } | null;
 }
 
 export interface DynamicsMetrics {
@@ -99,6 +117,30 @@ export interface DynamicsMetrics {
   attackSpeedIndex: number | null;
   // Release tail: median decay time from peak to -10dB (ms)
   releaseTailMs: number | null;
+
+  // === NEW: Dynamic Range Preservation Score ===
+  dynamicPreservationScore: number | null; // 0-100, higher = better preserved
+  dynamicPreservationNote: string | null;
+
+  // === NEW: Transient Spacing Analysis ===
+  transientSpacingCV: number | null; // Coefficient of variation (0-1)
+  transientTimingCharacter: "robotic" | "tight" | "natural" | "loose" | null;
+
+  // === NEW: Compression Detection ===
+  compressionEstimate: {
+    estimatedRatio: number | null;
+    estimatedThresholdDB: number | null;
+    compressionCharacter: "light" | "moderate" | "heavy" | "brickwall" | null;
+    confidence: "low" | "medium" | "high";
+  } | null;
+
+  // === NEW: Transient Sharpness ===
+  transientSharpness: {
+    attackSteepnessScore: number; // 0-100
+    spacingUniformityScore: number; // 0-100
+    avgAttackMs: number | null;
+    avgDecayMs: number | null;
+  } | null;
 }
 
 export interface SpectralAnalysis {
@@ -141,6 +183,14 @@ export interface SpectralAnalysis {
   // "Within typical range" indicators (percentile-based references)
   spectralBalanceStatus: "bright" | "balanced" | "dark" | null;
   spectralBalanceNote: string | null; // e.g., "Outside common range for modern pop"
+
+  // === NEW: Harmonic Distortion Analysis ===
+  harmonicDistortion: {
+    thdPercent: number | null;
+    dominantHarmonics: number[];
+    distortionCharacter: "clean" | "warm" | "gritty" | "clipped" | null;
+    fundamentalHz: number | null;
+  } | null;
 }
 
 export interface StereoAnalysis {

@@ -228,13 +228,90 @@ export class AlbumAnalyzerApp extends LitElement {
 
   private exportJSON() {
     if (!this.album) return;
-    const blob = new Blob([JSON.stringify(this.album, null, 2)], { type: "application/json" });
+
+    // Generate key findings from analysis
+    const keyFindings: string[] = [];
+    const recommendations: string[] = [];
+
+    // Loudness findings
+    if (this.album.summary.avgLUFS !== undefined) {
+      const avgLUFS = this.album.summary.avgLUFS;
+      if (avgLUFS > -10) {
+        keyFindings.push(`Album is very loud (avg ${avgLUFS.toFixed(1)} LUFS)`);
+        recommendations.push("Consider reducing loudness for better streaming platform performance");
+      } else if (avgLUFS < -16) {
+        keyFindings.push(`Album is relatively quiet (avg ${avgLUFS.toFixed(1)} LUFS)`);
+        recommendations.push("May be normalized up on streaming platforms, which is generally fine");
+      } else {
+        keyFindings.push(`Album loudness is in optimal range (avg ${avgLUFS.toFixed(1)} LUFS)`);
+      }
+    }
+
+    // Peak findings
+    if (this.album.summary.tracksAboveNeg1dBTP && this.album.summary.tracksAboveNeg1dBTP > 0) {
+      keyFindings.push(`${this.album.summary.tracksAboveNeg1dBTP} track(s) exceed -1 dBTP true peak`);
+      recommendations.push("Consider reducing peaks to below -1 dBTP for codec safety margin");
+    }
+
+    // Clipping findings
+    if (this.album.summary.tracksWithClipping && this.album.summary.tracksWithClipping > 0) {
+      keyFindings.push(`${this.album.summary.tracksWithClipping} track(s) contain clipping`);
+      recommendations.push("Review clipped tracks and consider re-mastering");
+    }
+
+    // Dynamics findings
+    if (this.album.summary.avgDynamicRange !== undefined && this.album.summary.avgDynamicRange < 6) {
+      keyFindings.push("Limited dynamic range detected");
+      recommendations.push("Consider preserving more dynamics for improved listening experience");
+    }
+
+    // Phase issues
+    if (this.album.summary.tracksWithPhaseIssues && this.album.summary.tracksWithPhaseIssues > 0) {
+      keyFindings.push(`${this.album.summary.tracksWithPhaseIssues} track(s) have phase issues`);
+      recommendations.push("Check mono compatibility and low-end phase alignment");
+    }
+
+    // Track overview for quick reference
+    const trackOverview = this.album.tracks.map(t => ({
+      number: t.trackNumber,
+      name: t.parameters.filename,
+      duration: t.parameters.durationFormatted,
+      integratedLUFS: t.loudness.integratedLUFS,
+      truePeakDBTP: t.loudness.truePeakDBTP,
+      dynamicRangeDB: t.dynamics.dynamicRangeDB,
+      issues: t.issues.length,
+      warnings: t.warnings.length
+    }));
+
+    // Enhanced export structure
+    const exportReport = {
+      version: "1.0",
+      exportDate: new Date().toISOString(),
+      summary: {
+        albumName: this.album.albumName,
+        totalTracks: this.album.totalTracks,
+        totalDuration: this.album.totalDuration,
+        overallScore: this.album.overallScore,
+        distributionReady: this.album.distributionReady,
+        keyFindings,
+        recommendations
+      },
+      trackOverview,
+      analysis: this.album
+    };
+
+    const blob = new Blob([JSON.stringify(exportReport, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "auralgeek-analysis.json";
+    a.download = `auralgeek-${this.album.albumName.replace(/[^a-z0-9]/gi, '-').toLowerCase()}-analysis.json`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  private copyJSONToClipboard() {
+    if (!this.album) return;
+    navigator.clipboard.writeText(JSON.stringify(this.album, null, 2));
   }
 
   private toggleTrack(trackNumber: number) {
@@ -279,6 +356,9 @@ export class AlbumAnalyzerApp extends LitElement {
             </button>
             <button class="btn btn-secondary" ?disabled=${!this.album} @click=${this.exportJSON}>
               Export JSON
+            </button>
+            <button class="btn btn-secondary" ?disabled=${!this.album} @click=${this.copyJSONToClipboard} title="Copy analysis JSON to clipboard">
+              Copy
             </button>
           </div>
 

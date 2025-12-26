@@ -161,6 +161,58 @@ function generateISPTest(sampleRate, duration) {
   return samples;
 }
 
+/**
+ * Generate a clipped signal - a loud sine wave that clips at ±1.0
+ * The pre-clip signal amplitude is higher, creating flat tops/bottoms
+ */
+function generateClippedSignal(sampleRate, duration, frequency, overdrive) {
+  const numSamples = Math.floor(sampleRate * duration);
+  const samples = new Float32Array(numSamples);
+
+  for (let i = 0; i < numSamples; i++) {
+    // Generate overdriven sine wave
+    const raw = overdrive * Math.sin(2 * Math.PI * frequency * i / sampleRate);
+    // Hard clip at ±1.0
+    samples[i] = Math.max(-1, Math.min(1, raw));
+  }
+
+  return samples;
+}
+
+/**
+ * Generate a signal with DC offset
+ */
+function generateDCOffset(sampleRate, duration, frequency, amplitude, dcOffset) {
+  const numSamples = Math.floor(sampleRate * duration);
+  const samples = new Float32Array(numSamples);
+
+  for (let i = 0; i < numSamples; i++) {
+    const sine = amplitude * Math.sin(2 * Math.PI * frequency * i / sampleRate);
+    // Add DC offset and clip if needed
+    samples[i] = Math.max(-1, Math.min(1, sine + dcOffset));
+  }
+
+  return samples;
+}
+
+/**
+ * Generate phase-inverted stereo signal (L and R out of phase)
+ * This creates a signal with very low or negative correlation
+ */
+function generatePhaseInverted(sampleRate, duration, frequency, amplitude) {
+  const numSamples = Math.floor(sampleRate * duration);
+  const left = new Float32Array(numSamples);
+  const right = new Float32Array(numSamples);
+
+  for (let i = 0; i < numSamples; i++) {
+    const sine = amplitude * Math.sin(2 * Math.PI * frequency * i / sampleRate);
+    left[i] = sine;
+    right[i] = -sine; // Inverted phase
+  }
+
+  return { left, right };
+}
+
 // ========================================
 // Generate test files
 // ========================================
@@ -220,6 +272,153 @@ writeWavFile(
   [pinkNoise, pinkNoise]
 );
 
+// 7. Clipped signal (hard clipping at ±1.0)
+const clippedSignal = generateClippedSignal(sampleRate, duration, 1000, 1.5); // 1.5x overdrive
+writeWavFile(
+  join(fixturesDir, 'clipped-signal.wav'),
+  sampleRate,
+  [clippedSignal, clippedSignal]
+);
+
+// 8. DC offset signal
+const dcOffsetSignal = generateDCOffset(sampleRate, duration, 1000, 0.3, 0.1); // 0.1 DC offset
+writeWavFile(
+  join(fixturesDir, 'dc-offset.wav'),
+  sampleRate,
+  [dcOffsetSignal, dcOffsetSignal]
+);
+
+// 9. Phase-inverted stereo (L and R out of phase)
+const phaseInverted = generatePhaseInverted(sampleRate, duration, 1000, 0.5);
+writeWavFile(
+  join(fixturesDir, 'phase-inverted.wav'),
+  sampleRate,
+  [phaseInverted.left, phaseInverted.right]
+);
+
+// 10. Heavily compressed signal (low crest factor)
+function generateCompressedSignal(sampleRate, duration, frequency, ratio) {
+  const numSamples = Math.floor(sampleRate * duration);
+  const samples = new Float32Array(numSamples);
+  const threshold = 0.3;
+
+  for (let i = 0; i < numSamples; i++) {
+    let raw = 0.8 * Math.sin(2 * Math.PI * frequency * i / sampleRate);
+    // Add some harmonics for realism
+    raw += 0.2 * Math.sin(4 * Math.PI * frequency * i / sampleRate);
+    raw += 0.1 * Math.sin(6 * Math.PI * frequency * i / sampleRate);
+
+    // Apply soft-knee compression
+    const absVal = Math.abs(raw);
+    if (absVal > threshold) {
+      const excess = absVal - threshold;
+      const compressed = threshold + excess / ratio;
+      raw = raw > 0 ? compressed : -compressed;
+    }
+    samples[i] = raw;
+  }
+
+  // Normalize
+  let max = 0;
+  for (let i = 0; i < numSamples; i++) {
+    if (Math.abs(samples[i]) > max) max = Math.abs(samples[i]);
+  }
+  for (let i = 0; i < numSamples; i++) {
+    samples[i] = (samples[i] / max) * 0.95;
+  }
+
+  return samples;
+}
+
+const compressedSignal = generateCompressedSignal(sampleRate, duration, 440, 8); // 8:1 ratio
+writeWavFile(
+  join(fixturesDir, 'compressed-heavy.wav'),
+  sampleRate,
+  [compressedSignal, compressedSignal]
+);
+
+// 11. Distorted sine (for THD testing)
+function generateDistortedSine(sampleRate, duration, frequency, distortion) {
+  const numSamples = Math.floor(sampleRate * duration);
+  const samples = new Float32Array(numSamples);
+
+  for (let i = 0; i < numSamples; i++) {
+    let raw = Math.sin(2 * Math.PI * frequency * i / sampleRate);
+    // Apply soft clipping distortion (tanh)
+    raw = Math.tanh(raw * distortion) / Math.tanh(distortion);
+    samples[i] = raw * 0.8;
+  }
+
+  return samples;
+}
+
+const distortedSine = generateDistortedSine(sampleRate, duration, 440, 3); // Moderate distortion
+writeWavFile(
+  join(fixturesDir, 'distorted-sine.wav'),
+  sampleRate,
+  [distortedSine, distortedSine]
+);
+
+// 12. Sharp transients (drum-like impulses)
+function generateSharpTransients(sampleRate, duration, bpm) {
+  const numSamples = Math.floor(sampleRate * duration);
+  const samples = new Float32Array(numSamples);
+  const samplesPerBeat = Math.floor((60 / bpm) * sampleRate);
+  const attackSamples = Math.floor(sampleRate * 0.002); // 2ms attack
+  const decaySamples = Math.floor(sampleRate * 0.1);    // 100ms decay
+
+  for (let beat = 0; beat < duration * bpm / 60; beat++) {
+    const startSample = beat * samplesPerBeat;
+
+    // Sharp attack
+    for (let i = 0; i < attackSamples && startSample + i < numSamples; i++) {
+      samples[startSample + i] = i / attackSamples * 0.9;
+    }
+
+    // Exponential decay
+    for (let i = 0; i < decaySamples && startSample + attackSamples + i < numSamples; i++) {
+      const envelope = Math.exp(-i / (decaySamples / 5)) * 0.9;
+      const noise = (Math.random() * 2 - 1) * envelope;
+      samples[startSample + attackSamples + i] = noise;
+    }
+  }
+
+  return samples;
+}
+
+const sharpTransients = generateSharpTransients(sampleRate, duration, 120);
+writeWavFile(
+  join(fixturesDir, 'sharp-transients.wav'),
+  sampleRate,
+  [sharpTransients, sharpTransients]
+);
+
+// 13. Robotic timing (perfectly uniform transients - for AI detection)
+function generateRoboticTransients(sampleRate, duration, bpm) {
+  const numSamples = Math.floor(sampleRate * duration);
+  const samples = new Float32Array(numSamples);
+  const samplesPerBeat = Math.floor((60 / bpm) * sampleRate);
+  const clickDuration = Math.floor(sampleRate * 0.005); // 5ms click
+
+  for (let beat = 0; beat < duration * bpm / 60; beat++) {
+    const startSample = beat * samplesPerBeat;
+
+    // Perfect rectangular click
+    for (let i = 0; i < clickDuration && startSample + i < numSamples; i++) {
+      samples[startSample + i] = 0.8;
+    }
+  }
+
+  return samples;
+}
+
+const roboticTransients = generateRoboticTransients(sampleRate, duration, 120);
+writeWavFile(
+  join(fixturesDir, 'robotic-timing.wav'),
+  sampleRate,
+  [roboticTransients, roboticTransients]
+);
+
 console.log('\nDone! Test files created in tests/fixtures/synthetic/');
 console.log('\nExpected values (approximate):');
 console.log('  sine-1k-minus14lufs.wav: -14 LUFS');
@@ -228,3 +427,10 @@ console.log('  sine-1k-0dbfs.wav: ~-3 LUFS, 0 dBFS sample peak');
 console.log('  silence.wav: -Infinity LUFS');
 console.log('  isp-test.wav: Inter-sample peak > 0 dBTP');
 console.log('  pink-noise.wav: Variable LUFS (pink noise spectrum)');
+console.log('  clipped-signal.wav: Hard clipping, hasClipping=true');
+console.log('  dc-offset.wav: DC offset ~0.1');
+console.log('  phase-inverted.wav: Stereo correlation = -1 (out of phase)');
+console.log('  compressed-heavy.wav: Heavy compression, low crest factor');
+console.log('  distorted-sine.wav: THD > 0 (harmonic distortion)');
+console.log('  sharp-transients.wav: Sharp attacks, natural timing');
+console.log('  robotic-timing.wav: Perfect timing, robotic character');

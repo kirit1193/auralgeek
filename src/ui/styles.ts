@@ -747,6 +747,7 @@ export const appStyles = css`
       gap: 8px;
       align-items: center;
       flex-shrink: 0;
+      margin-left: auto;
     }
 
     /* Hide secondary badge on very small screens */

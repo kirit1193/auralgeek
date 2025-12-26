@@ -18,6 +18,7 @@
  */
 
 import { dbFromLinear } from "../core/format";
+import { bandpassFilter } from "../utils/filters";
 
 // Type for ebur128-wasm module (lazy loaded)
 interface EbuR128Module {
@@ -99,6 +100,19 @@ export interface LoudnessResult {
 
   // === NEW: TP-to-loudness at loudest section (1.2B) ===
   tpToLoudnessAtPeak: number;
+
+  // === NEW: Loudness Correction Recommendation ===
+  loudnessCorrectionDB: number;
+  loudnessCorrectionNote: string;
+
+  // === NEW: Per-Band Loudness (Phase 2.1) ===
+  perBandLoudness: {
+    subLUFS: number | null;        // 20-80 Hz
+    bassLUFS: number | null;       // 80-250 Hz
+    midLUFS: number | null;        // 250-2k Hz
+    presenceLUFS: number | null;   // 2-6k Hz
+    brillianceLUFS: number | null; // 6-20k Hz
+  };
 }
 
 // ITU BS.1770 K-weighting pre-filter coefficients (48kHz)
@@ -467,6 +481,83 @@ function analyzePeakClustering(
   }
 }
 
+// === NEW: Per-Band Loudness Computation (Phase 2.1) ===
+interface PerBandLoudness {
+  subLUFS: number | null;        // 20-80 Hz
+  bassLUFS: number | null;       // 80-250 Hz
+  midLUFS: number | null;        // 250-2k Hz
+  presenceLUFS: number | null;   // 2-6k Hz
+  brillianceLUFS: number | null; // 6-20k Hz
+}
+
+const BAND_DEFINITIONS = [
+  { name: 'sub', lowHz: 20, highHz: 80 },
+  { name: 'bass', lowHz: 80, highHz: 250 },
+  { name: 'mid', lowHz: 250, highHz: 2000 },
+  { name: 'presence', lowHz: 2000, highHz: 6000 },
+  { name: 'brilliance', lowHz: 6000, highHz: 20000 }
+] as const;
+
+/**
+ * Compute integrated loudness per frequency band
+ * Uses bandpass filtering then K-weighting and ITU gating
+ */
+function computePerBandLoudness(
+  channels: Float32Array[],
+  sampleRate: number
+): PerBandLoudness {
+  const result: PerBandLoudness = {
+    subLUFS: null,
+    bassLUFS: null,
+    midLUFS: null,
+    presenceLUFS: null,
+    brillianceLUFS: null
+  };
+
+  // Pre-allocate buffers for efficiency
+  const n = channels[0].length;
+  const tempBuffer = new Float32Array(n);
+  const outputBuffer = new Float32Array(n);
+
+  for (const band of BAND_DEFINITIONS) {
+    // Adjust high frequency limit to Nyquist if necessary
+    const nyquist = sampleRate / 2;
+    const effectiveHighHz = Math.min(band.highHz, nyquist * 0.95);
+
+    // Skip bands that are mostly above Nyquist
+    if (band.lowHz >= effectiveHighHz) {
+      continue;
+    }
+
+    try {
+      // Apply bandpass filter to each channel
+      const filteredChannels = channels.map(ch =>
+        bandpassFilter(ch, band.lowHz, effectiveHighHz, sampleRate, outputBuffer.slice(), tempBuffer.slice())
+      );
+
+      // Apply K-weighting to filtered channels
+      const kWeightedBand = applyKWeighting(filteredChannels, sampleRate);
+
+      // Compute integrated loudness with ITU gating
+      const bandLUFS = computeIntegratedLoudness(kWeightedBand, sampleRate, true);
+      const lufsValue = isFinite(bandLUFS) ? bandLUFS : null;
+
+      // Store result based on band name
+      switch (band.name) {
+        case 'sub': result.subLUFS = lufsValue; break;
+        case 'bass': result.bassLUFS = lufsValue; break;
+        case 'mid': result.midLUFS = lufsValue; break;
+        case 'presence': result.presenceLUFS = lufsValue; break;
+        case 'brilliance': result.brillianceLUFS = lufsValue; break;
+      }
+    } catch {
+      // If filtering fails, leave as null
+    }
+  }
+
+  return result;
+}
+
 export function computeLoudness(sampleRate: number, channels: Float32Array[]): LoudnessResult {
   // Apply K-weighting for manual loudness calculations (needed for both paths)
   const kWeightedChannels = applyKWeighting(channels, sampleRate);
@@ -569,6 +660,23 @@ export function computeLoudness(sampleRate: number, channels: Float32Array[]): L
   const loudestSectionLUFS = shortTermValues[loudestIdx] ?? integratedLUFS;
   const tpToLoudnessAtPeak = truePeakDBTP - loudestSectionLUFS;
 
+  // === NEW: Loudness Correction Recommendation ===
+  const targetLUFS = -14; // Spotify/YouTube standard
+  const loudnessCorrectionDB = isFinite(integratedLUFS) ? targetLUFS - integratedLUFS : 0;
+  let loudnessCorrectionNote: string;
+  if (!isFinite(integratedLUFS)) {
+    loudnessCorrectionNote = "Unable to measure loudness";
+  } else if (Math.abs(loudnessCorrectionDB) < 0.5) {
+    loudnessCorrectionNote = "Already at target (-14 LUFS)";
+  } else if (loudnessCorrectionDB > 0) {
+    loudnessCorrectionNote = `+${loudnessCorrectionDB.toFixed(1)} dB to reach -14 LUFS`;
+  } else {
+    loudnessCorrectionNote = `${loudnessCorrectionDB.toFixed(1)} dB to reach -14 LUFS`;
+  }
+
+  // === NEW: Per-Band Loudness (Phase 2.1) ===
+  const perBandLoudness = computePerBandLoudness(channels, sampleRate);
+
   return {
     integratedLUFS,
     integratedUngatedLUFS,
@@ -593,6 +701,9 @@ export function computeLoudness(sampleRate: number, channels: Float32Array[]): L
     loudnessVolatilityLU,
     peakClusteringType: peakClustering.type,
     peakClusterCount: peakClustering.clusterCount,
-    tpToLoudnessAtPeak
+    tpToLoudnessAtPeak,
+    loudnessCorrectionDB,
+    loudnessCorrectionNote,
+    perBandLoudness
   };
 }

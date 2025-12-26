@@ -5,7 +5,7 @@
 
 import type { TrackAnalysis, AudioParameters } from '../core/types.js';
 import { computeLoudness } from '../analysis/loudness.js';
-import { computeDynamics, computeStereo, computeBandEnergiesMono } from '../analysis/dsp/index.js';
+import { computeDynamics, computeStereo, computeBandEnergiesMono, computeTHD } from '../analysis/dsp/index.js';
 import { computeMusicalFeatures, computeStreamingSimulation } from '../analysis/musical/index.js';
 import { bytesToMB, formatDuration, clamp } from '../core/format.js';
 import { evaluateDistribution } from '../analysis/rules.js';
@@ -38,14 +38,27 @@ function detectAIArtifacts(track: TrackAnalysis): TrackAnalysis['aiArtifacts'] {
   const shimmer = hf !== null && hf > -25;
   const shimmerScore = shimmer ? Math.min(100, (hf + 25) * 10) : 0;
 
-  const overall = shimmer ? shimmerScore : 0;
+  // Check for robotic timing (very regular transient spacing)
+  const timingChar = track.dynamics.transientTimingCharacter;
+  const spacingCV = track.dynamics.transientSpacingCV;
+  const roboticTiming = timingChar === 'robotic';
+  // Lower CV = more uniform = more robotic (invert for score where higher = more robotic)
+  const timingScore = spacingCV !== null
+    ? Math.min(100, Math.max(0, (1 - spacingCV) * 100))
+    : null;
+
+  // Combined AI score: shimmer contributes 60%, timing contributes 40%
+  let overall = 0;
+  if (shimmer) overall += shimmerScore * 0.6;
+  if (roboticTiming && timingScore !== null) overall += timingScore * 0.4;
+  overall = Math.min(100, overall);
 
   return {
     shimmerDetected: shimmer,
     shimmerScore,
-    roboticTiming: false,
-    timingScore: null,
-    overallAIScore: overall
+    roboticTiming,
+    timingScore,
+    overallAIScore: overall > 0 ? overall : null
   };
 }
 
@@ -62,7 +75,7 @@ function detectTrueStereo(L: Float32Array, R: Float32Array): boolean {
   return avgDiff > 0.0001;
 }
 
-function estimateEffectiveBitDepth(mono: Float32Array): number {
+function estimateEffectiveBitDepth(mono: Float32Array): { bits: number; noiseFloorDB: number } {
   const windowSize = 4096;
   let minEnergy = Infinity;
 
@@ -78,7 +91,66 @@ function estimateEffectiveBitDepth(mono: Float32Array): number {
 
   const noiseFloorDB = minEnergy > 0 ? 10 * Math.log10(minEnergy / windowSize) : -120;
   const effectiveBits = Math.min(24, Math.max(8, Math.round((-noiseFloorDB - 6) / 6)));
-  return effectiveBits;
+  return { bits: effectiveBits, noiseFloorDB };
+}
+
+// === NEW: Codec Quality Detection ===
+function estimateCodecQuality(
+  spectralRolloffHz: number | null,
+  effectiveBitDepth: number,
+  noiseFloorDB: number
+): { score: number; cutoffHz: number | null; note: string | null } {
+  let score = 100;
+  const issues: string[] = [];
+  let detectedCutoff: number | null = null;
+
+  // Check for lossy codec spectral cutoff
+  // MP3 128kbps typically cuts off around 16kHz
+  // MP3 192kbps around 18kHz
+  // AAC 128kbps around 15kHz
+  if (spectralRolloffHz !== null) {
+    if (spectralRolloffHz < 15000) {
+      score -= 40;
+      detectedCutoff = spectralRolloffHz;
+      issues.push(`Spectral cutoff at ${Math.round(spectralRolloffHz / 1000)}kHz indicates lossy compression`);
+    } else if (spectralRolloffHz < 17000) {
+      score -= 20;
+      detectedCutoff = spectralRolloffHz;
+      issues.push(`Reduced high-frequency content (${Math.round(spectralRolloffHz / 1000)}kHz)`);
+    } else if (spectralRolloffHz < 19000) {
+      score -= 10;
+      detectedCutoff = spectralRolloffHz;
+    }
+  }
+
+  // Penalize low effective bit depth
+  if (effectiveBitDepth <= 12) {
+    score -= 25;
+    issues.push(`Low effective bit depth (~${effectiveBitDepth}-bit)`);
+  } else if (effectiveBitDepth <= 14) {
+    score -= 15;
+  } else if (effectiveBitDepth <= 16) {
+    score -= 5;
+  }
+
+  // Elevated noise floor
+  if (noiseFloorDB > -60) {
+    score -= 15;
+    issues.push("Elevated noise floor");
+  } else if (noiseFloorDB > -70) {
+    score -= 5;
+  }
+
+  score = Math.max(0, Math.min(100, score));
+
+  let note: string | null = null;
+  if (issues.length > 0) {
+    note = issues.join("; ");
+  } else if (score >= 90) {
+    note = "High quality source";
+  }
+
+  return { score, cutoffHz: detectedCutoff, note };
 }
 
 export interface AnalysisProgress {
@@ -109,9 +181,10 @@ export function analyzeTrack(
     ? detectTrueStereo(decoded.channelData[0], decoded.channelData[1])
     : false;
 
-  // Estimate effective bit depth
-  const effectiveBitDepth = estimateEffectiveBitDepth(mono);
+  // Estimate effective bit depth and noise floor
+  const bitDepthResult = estimateEffectiveBitDepth(mono);
 
+  // Initial params (codec quality added after spectral analysis)
   const params: AudioParameters = {
     filename: decoded.filename,
     filesizeMB: bytesToMB(decoded.filesize),
@@ -122,7 +195,8 @@ export function analyzeTrack(
     decodedSampleRate: decoded.sampleRate,
     channels: decoded.channels,
     bitDepth: undefined,
-    effectiveBitDepth,
+    effectiveBitDepth: bitDepthResult.bits,
+    noiseFloorDB: bitDepthResult.noiseFloorDB,
     overallBitrate: undefined,
     isTrueStereo
   };
@@ -139,6 +213,19 @@ export function analyzeTrack(
 
   onProgress?.({ stage: 'Spectral', stageIdx: 3 });
   const bands = computeBandEnergiesMono(mono, decoded.sampleRate);
+
+  // Compute THD (harmonic distortion)
+  const harmonicDistortion = computeTHD(mono, decoded.sampleRate);
+
+  // Compute codec quality after spectral analysis (needs spectralRolloffHz)
+  const codecQuality = estimateCodecQuality(
+    bands.spectralRolloffHz,
+    bitDepthResult.bits,
+    bitDepthResult.noiseFloorDB
+  );
+  params.spectralCutoffHz = codecQuality.cutoffHz ?? undefined;
+  params.codecQualityScore = codecQuality.score;
+  params.codecQualityNote = codecQuality.note ?? undefined;
 
   onProgress?.({ stage: 'Musical', stageIdx: 4 });
   const musical = computeMusicalFeatures(mono, decoded.sampleRate);
@@ -175,7 +262,12 @@ export function analyzeTrack(
       loudnessVolatilityLU: loud.loudnessVolatilityLU,
       peakClusteringType: loud.peakClusteringType,
       peakClusterCount: loud.peakClusterCount,
-      tpToLoudnessAtPeak: loud.tpToLoudnessAtPeak
+      tpToLoudnessAtPeak: loud.tpToLoudnessAtPeak,
+      // === NEW: Loudness Correction ===
+      loudnessCorrectionDB: loud.loudnessCorrectionDB,
+      loudnessCorrectionNote: loud.loudnessCorrectionNote,
+      // === NEW: Per-Band Loudness (Phase 2.1) ===
+      perBandLoudness: loud.perBandLoudness
     },
     dynamics: {
       peakDBFS: dyn.peakDBFS,
@@ -195,7 +287,14 @@ export function analyzeTrack(
       clipDensityPerMinute: dyn.clipDensityPerMinute,
       worstClipTimestamps: dyn.worstClipTimestamps,
       attackSpeedIndex: dyn.attackSpeedIndex,
-      releaseTailMs: dyn.releaseTailMs
+      releaseTailMs: dyn.releaseTailMs,
+      // === NEW: Dynamics enhancements ===
+      dynamicPreservationScore: dyn.dynamicPreservationScore,
+      dynamicPreservationNote: dyn.dynamicPreservationNote,
+      transientSpacingCV: dyn.transientSpacingCV,
+      transientTimingCharacter: dyn.transientTimingCharacter,
+      compressionEstimate: dyn.compressionEstimate,
+      transientSharpness: dyn.transientSharpness
     },
     spectral: {
       spectralCentroidHz: bands.spectralCentroidHz,
@@ -215,7 +314,9 @@ export function analyzeTrack(
       sibilanceIndexWeighted: bands.sibilanceIndexWeighted,
       spectralTiltWeightedDBPerOctave: bands.spectralTiltWeightedDBPerOctave,
       spectralBalanceStatus: bands.spectralBalanceStatus,
-      spectralBalanceNote: bands.spectralBalanceNote
+      spectralBalanceNote: bands.spectralBalanceNote,
+      // === NEW: Harmonic Distortion (Phase 4.1) ===
+      harmonicDistortion
     },
     stereo: {
       stereoWidthPct: st.stereoWidthPct,

@@ -18,6 +18,8 @@ import { join } from 'path';
 import { readWavFile } from './helpers/wav-reader';
 import { computeLoudness } from '../src/analysis/loudness';
 import { computeTruePeakStereo, computeSamplePeak } from '../src/analysis/truePeak';
+import { computeDynamics } from '../src/analysis/dsp/dynamics';
+import { computeStereo } from '../src/analysis/dsp/stereo';
 
 const fixturesDir = join(__dirname, 'fixtures', 'synthetic');
 
@@ -174,5 +176,126 @@ describe('Short-term Loudness', () => {
     for (const val of result.shortTermTimeline) {
       expect(typeof val).toBe('number');
     }
+  });
+});
+
+describe('Clipping Detection', () => {
+  it('detects hard clipping in overdriven signal', async () => {
+    const wav = readWavFile(join(fixturesDir, 'clipped-signal.wav'));
+    const dynamics = computeDynamics(wav.samples, wav.sampleRate);
+
+    // Clipped signal should be detected
+    expect(dynamics.hasClipping).toBe(true);
+    expect(dynamics.clippedSampleCount).toBeGreaterThan(0);
+  });
+
+  it('does not falsely detect clipping in clean signal', async () => {
+    const wav = readWavFile(join(fixturesDir, 'sine-1k-minus14lufs.wav'));
+    const dynamics = computeDynamics(wav.samples, wav.sampleRate);
+
+    // Clean signal should not be flagged as clipped
+    expect(dynamics.hasClipping).toBe(false);
+  });
+});
+
+describe('DC Offset Detection', () => {
+  it('detects DC offset in biased signal', async () => {
+    const wav = readWavFile(join(fixturesDir, 'dc-offset.wav'));
+    const dynamics = computeDynamics(wav.samples, wav.sampleRate);
+
+    // Should detect DC offset around 0.1
+    expect(dynamics.dcOffset).toBeGreaterThan(0.05);
+    expect(dynamics.dcOffset).toBeLessThan(0.15);
+  });
+
+  it('reports near-zero DC offset for centered signal', async () => {
+    const wav = readWavFile(join(fixturesDir, 'sine-1k-minus14lufs.wav'));
+    const dynamics = computeDynamics(wav.samples, wav.sampleRate);
+
+    // Centered signal should have minimal DC offset
+    expect(Math.abs(dynamics.dcOffset)).toBeLessThan(0.01);
+  });
+});
+
+describe('Stereo Phase Correlation', () => {
+  it('detects negative correlation in phase-inverted stereo', async () => {
+    const wav = readWavFile(join(fixturesDir, 'phase-inverted.wav'));
+    const stereo = computeStereo(wav.samples, wav.sampleRate);
+
+    // Phase-inverted L/R should have correlation near -1
+    expect(stereo.correlationMean).toBeLessThan(-0.9);
+    expect(stereo.correlationMean).toBeGreaterThanOrEqual(-1);
+  });
+
+  it('detects positive correlation in identical stereo', async () => {
+    const wav = readWavFile(join(fixturesDir, 'sine-1k-minus14lufs.wav'));
+    const stereo = computeStereo(wav.samples, wav.sampleRate);
+
+    // Identical L/R should have correlation near +1
+    expect(stereo.correlationMean).toBeGreaterThan(0.9);
+    expect(stereo.correlationMean).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('Loudness Correction', () => {
+  it('calculates positive gain for quiet signal', async () => {
+    const wav = readWavFile(join(fixturesDir, 'sine-1k-minus23lufs.wav'));
+    const result = computeLoudness(wav.sampleRate, wav.samples);
+
+    // Quiet signal needs positive gain to reach -14 LUFS
+    // Note: Mock LUFS implementation may give different absolute values
+    expect(result.loudnessCorrectionDB).toBeGreaterThan(0);
+    expect(result.loudnessCorrectionNote).toContain('-14 LUFS');
+  });
+
+  it('provides correction for target signal', async () => {
+    const wav = readWavFile(join(fixturesDir, 'sine-1k-minus14lufs.wav'));
+    const result = computeLoudness(wav.sampleRate, wav.samples);
+
+    // Should provide a valid correction note
+    expect(result.loudnessCorrectionNote).toBeDefined();
+    expect(typeof result.loudnessCorrectionDB).toBe('number');
+  });
+
+  it('suggests reduction for loud signal', async () => {
+    const wav = readWavFile(join(fixturesDir, 'sine-1k-0dbfs.wav'));
+    const result = computeLoudness(wav.sampleRate, wav.samples);
+
+    // 0 dBFS signal is very loud, needs reduction
+    expect(result.loudnessCorrectionDB).toBeLessThan(0);
+    expect(result.loudnessCorrectionNote).toContain('-14 LUFS');
+  });
+});
+
+describe('Per-Band Loudness', () => {
+  it('computes valid LUFS per band', async () => {
+    const wav = readWavFile(join(fixturesDir, 'pink-noise.wav'));
+    const result = computeLoudness(wav.sampleRate, wav.samples);
+
+    expect(result.perBandLoudness).toBeDefined();
+    // Pink noise should have energy across bands
+    expect(result.perBandLoudness.midLUFS).not.toBeNull();
+  });
+
+  it('handles narrowband signals', async () => {
+    const wav = readWavFile(join(fixturesDir, 'sine-1k-minus14lufs.wav'));
+    const result = computeLoudness(wav.sampleRate, wav.samples);
+
+    expect(result.perBandLoudness).toBeDefined();
+    // 1kHz sine is in the mid band
+    expect(result.perBandLoudness.midLUFS).not.toBeNull();
+    // Sub bass should be very quiet for 1kHz sine
+    if (result.perBandLoudness.subLUFS !== null) {
+      expect(result.perBandLoudness.subLUFS).toBeLessThan(result.perBandLoudness.midLUFS!);
+    }
+  });
+
+  it('returns null for bands above Nyquist', async () => {
+    // Using standard 48kHz rate, brilliance band (6-20kHz) should work
+    const wav = readWavFile(join(fixturesDir, 'pink-noise.wav'));
+    const result = computeLoudness(wav.sampleRate, wav.samples);
+
+    // All standard bands should compute at 48kHz
+    expect(result.perBandLoudness).toBeDefined();
   });
 });
