@@ -5,7 +5,7 @@
 
 import { fft } from '../../utils/fft.js';
 import { pearsonCorrelation, rotateArray } from '../../utils/math.js';
-import { dspPool } from '../../utils/bufferPool.js';
+import { dspPool, getHannWindow } from '../../utils/bufferPool.js';
 
 export interface KeyCandidate {
   key: string;
@@ -41,11 +41,11 @@ function computeFFTMagnitudes(
   fftSize: number,
   real: Float32Array,
   imag: Float32Array,
-  magnitudes: Float32Array
+  magnitudes: Float32Array,
+  hannWindow: Float32Array
 ): void {
   for (let i = 0; i < fftSize; i++) {
-    const window = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / fftSize);
-    real[i] = (samples[i] ?? 0) * window;
+    real[i] = (samples[i] ?? 0) * hannWindow[i];
     imag[i] = 0;
   }
 
@@ -66,11 +66,12 @@ export function computeChromagram(mono: Float32Array, sampleRate: number): numbe
   const real = dspPool.acquire(fftSize);
   const imag = dspPool.acquire(fftSize);
   const magnitudes = dspPool.acquire(fftSize / 2);
+  const hannWindow = getHannWindow(fftSize);
 
   for (let pos = 0; pos + fftSize < mono.length; pos += hopSize) {
-    // Copy samples to real buffer with window
+    // Copy samples to real buffer with cached window
     const samples = mono.subarray(pos, pos + fftSize);
-    computeFFTMagnitudes(samples, fftSize, real, imag, magnitudes);
+    computeFFTMagnitudes(samples, fftSize, real, imag, magnitudes, hannWindow);
 
     for (let bin = 1; bin < fftSize / 2; bin++) {
       const freq = bin * freqResolution;

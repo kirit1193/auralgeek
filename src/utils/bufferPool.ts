@@ -145,3 +145,61 @@ export function createBufferPool(maxPerSize: number = 8): BufferPool {
  * Use this for all FFT and filter buffer allocations
  */
 export const dspPool: BufferPool = createBufferPool(8);
+
+/**
+ * Window Function Cache
+ * Caches pre-computed window functions to avoid repeated computation.
+ */
+const windowCache = new Map<string, Float32Array>();
+
+/**
+ * Get a cached Hann window of the specified size.
+ * Windows are computed once and reused for all subsequent calls.
+ *
+ * @param size Window size (should match FFT frame size)
+ * @returns Pre-computed Hann window coefficients
+ */
+export function getHannWindow(size: number): Float32Array {
+  const key = `hann_${size}`;
+  let window = windowCache.get(key);
+  if (!window) {
+    window = new Float32Array(size);
+    for (let i = 0; i < size; i++) {
+      window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (size - 1)));
+    }
+    windowCache.set(key, window);
+  }
+  return window;
+}
+
+/**
+ * Get a cached Blackman-Harris window of the specified size.
+ * Better sidelobe suppression than Hann, useful for spectral analysis.
+ *
+ * @param size Window size
+ * @returns Pre-computed Blackman-Harris window coefficients
+ */
+export function getBlackmanHarrisWindow(size: number): Float32Array {
+  const key = `blackmanharris_${size}`;
+  let window = windowCache.get(key);
+  if (!window) {
+    window = new Float32Array(size);
+    const a0 = 0.35875;
+    const a1 = 0.48829;
+    const a2 = 0.14128;
+    const a3 = 0.01168;
+    for (let i = 0; i < size; i++) {
+      const x = (2 * Math.PI * i) / (size - 1);
+      window[i] = a0 - a1 * Math.cos(x) + a2 * Math.cos(2 * x) - a3 * Math.cos(3 * x);
+    }
+    windowCache.set(key, window);
+  }
+  return window;
+}
+
+/**
+ * Clear the window cache (call when clearing pool)
+ */
+export function clearWindowCache(): void {
+  windowCache.clear();
+}

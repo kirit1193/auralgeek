@@ -113,6 +113,53 @@ function applyKWeighting(channels: Float32Array[], sampleRate: number): Float32A
   });
 }
 
+/**
+ * Peak-preserving downsampling using min-max bucketing.
+ * Preserves both peaks and valleys to maintain visual accuracy.
+ * Returns pairs of [min, max] for each bucket.
+ */
+function downsamplePeakPreserving(values: number[], targetPoints: number): number[] {
+  const filtered = values.filter(v => isFinite(v));
+  if (filtered.length <= targetPoints) return [...filtered];
+
+  // Each bucket produces 2 points (min and max), so buckets = targetPoints / 2
+  const numBuckets = Math.floor(targetPoints / 2);
+  const bucketSize = filtered.length / numBuckets;
+  const result: number[] = [];
+
+  for (let i = 0; i < numBuckets; i++) {
+    const start = Math.floor(i * bucketSize);
+    const end = Math.min(Math.floor((i + 1) * bucketSize), filtered.length);
+
+    if (start >= end) continue;
+
+    let min = Infinity;
+    let max = -Infinity;
+    let minIdx = start;
+    let maxIdx = start;
+
+    for (let j = start; j < end; j++) {
+      if (filtered[j] < min) {
+        min = filtered[j];
+        minIdx = j;
+      }
+      if (filtered[j] > max) {
+        max = filtered[j];
+        maxIdx = j;
+      }
+    }
+
+    // Push in temporal order to maintain waveform shape
+    if (minIdx <= maxIdx) {
+      result.push(min, max);
+    } else {
+      result.push(max, min);
+    }
+  }
+
+  return result;
+}
+
 // Compute loudness in LUFS from mean square values
 function msToLUFS(meanSquare: number): number {
   if (meanSquare <= 0) return -Infinity;
@@ -433,13 +480,9 @@ export function computeLoudness(sampleRate: number, channels: Float32Array[]): L
   // LRA (Loudness Range)
   const loudnessRangeLU = computeLRA(shortTermValues);
 
-  // Downsample timeline for UI (target ~10Hz, max 500 points)
-  const maxPoints = 500;
-  const step = Math.max(1, Math.floor(shortTermValues.length / maxPoints));
-  const shortTermTimeline: number[] = [];
-  for (let i = 0; i < shortTermValues.length; i += step) {
-    shortTermTimeline.push(shortTermValues[i]);
-  }
+  // Downsample timeline for UI with peak-preserving algorithm
+  // Uses min-max bucketing to preserve extremes while reducing data
+  const shortTermTimeline = downsamplePeakPreserving(shortTermValues, 200);
 
   // Find loudest and quietest segments
   let loudestIdx = 0, quietestIdx = 0;

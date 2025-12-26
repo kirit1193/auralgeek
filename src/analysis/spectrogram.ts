@@ -4,7 +4,7 @@
  */
 
 import { fft } from '../utils/fft.js';
-import { dspPool } from '../utils/bufferPool.js';
+import { dspPool, getHannWindow } from '../utils/bufferPool.js';
 import type { SpectrogramData } from '../core/types.js';
 
 export interface SpectrogramConfig {
@@ -67,18 +67,15 @@ export function computeSpectrogram(
   const real = dspPool.acquire(fftSize);
   const imag = dspPool.acquire(fftSize);
 
-  // Pre-compute Hann window
-  const window = new Float32Array(fftSize);
-  for (let i = 0; i < fftSize; i++) {
-    window[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / fftSize);
-  }
+  // Use cached Hann window
+  const window = getHannWindow(fftSize);
 
   const magnitudes: Float32Array[] = [];
 
   for (let frame = 0; frame < numFrames; frame++) {
     const start = frame * hopSize;
 
-    // Apply window and copy to FFT buffer
+    // Apply cached window and copy to FFT buffer
     for (let i = 0; i < fftSize; i++) {
       real[i] = mono[start + i] * window[i];
       imag[i] = 0;

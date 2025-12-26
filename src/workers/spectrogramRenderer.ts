@@ -1,6 +1,7 @@
 /**
  * Spectrogram Renderer using OffscreenCanvas
- * Renders SpectrogramData to ImageBitmap for zero-copy transfer to main thread
+ * Supports both WebGL (GPU-accelerated) and 2D Canvas rendering paths.
+ * Renders SpectrogramData to ImageBitmap for zero-copy transfer to main thread.
  */
 
 import type { SpectrogramData } from '../core/types.js';
@@ -9,7 +10,42 @@ export interface SpectrogramRenderConfig {
   width: number;
   height: number;
   logFreqScale?: boolean;  // Use logarithmic frequency scale (default: true)
+  preferWebGL?: boolean;   // Try WebGL first (default: true)
 }
+
+// WebGL shader sources
+const VERTEX_SHADER_SOURCE = `
+  attribute vec2 a_position;
+  attribute vec2 a_texCoord;
+  varying vec2 v_texCoord;
+  void main() {
+    gl_Position = vec4(a_position, 0.0, 1.0);
+    v_texCoord = a_texCoord;
+  }
+`;
+
+const FRAGMENT_SHADER_SOURCE = `
+  precision mediump float;
+  varying vec2 v_texCoord;
+  uniform sampler2D u_spectrogram;
+  uniform sampler2D u_colormap;
+  uniform float u_minDB;
+  uniform float u_maxDB;
+  uniform float u_logScale;
+
+  void main() {
+    // Get dB value from spectrogram texture (stored in red channel)
+    float db = texture2D(u_spectrogram, v_texCoord).r;
+
+    // Normalize to 0-1 range for colormap lookup
+    float normalized = clamp((db - u_minDB) / (u_maxDB - u_minDB), 0.0, 1.0);
+
+    // Look up color from colormap (1D texture, use x coordinate)
+    vec4 color = texture2D(u_colormap, vec2(normalized, 0.5));
+
+    gl_FragColor = color;
+  }
+`;
 
 // Viridis color map (256 entries) - perceptually uniform, colorblind-friendly
 const VIRIDIS_COLORS: [number, number, number][] = [];
@@ -99,9 +135,31 @@ function freqBinToY(
 
 /**
  * Render spectrogram to ImageBitmap
- * Uses OffscreenCanvas for worker-thread rendering
+ * Uses WebGL when available for GPU acceleration, falls back to 2D Canvas.
  */
 export function renderSpectrogram(
+  spectrogram: SpectrogramData,
+  config: SpectrogramRenderConfig
+): ImageBitmap {
+  const { preferWebGL = true } = config;
+
+  // Try WebGL first if preferred
+  if (preferWebGL) {
+    const webglResult = renderSpectrogramWebGL(spectrogram, config);
+    if (webglResult) {
+      return webglResult;
+    }
+    // Fall through to 2D Canvas if WebGL failed
+  }
+
+  // 2D Canvas fallback
+  return renderSpectrogram2D(spectrogram, config);
+}
+
+/**
+ * Render spectrogram using 2D Canvas (fallback path)
+ */
+function renderSpectrogram2D(
   spectrogram: SpectrogramData,
   config: SpectrogramRenderConfig
 ): ImageBitmap {
@@ -205,4 +263,200 @@ export function renderSpectrogram(
  */
 export function isOffscreenCanvasSupported(): boolean {
   return typeof OffscreenCanvas !== 'undefined';
+}
+
+/**
+ * Check if WebGL is available in workers
+ */
+export function isWebGLSupported(): boolean {
+  if (typeof OffscreenCanvas === 'undefined') return false;
+  try {
+    const testCanvas = new OffscreenCanvas(1, 1);
+    const gl = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
+    return gl !== null;
+  } catch {
+    return false;
+  }
+}
+
+// Cached WebGL colormap texture data
+let colormapTextureData: Uint8Array | null = null;
+
+function getColormapTextureData(): Uint8Array {
+  if (colormapTextureData) return colormapTextureData;
+
+  initViridisColormap();
+  colormapTextureData = new Uint8Array(256 * 4);
+  for (let i = 0; i < 256; i++) {
+    const color = VIRIDIS_COLORS[i];
+    colormapTextureData[i * 4] = color[0];
+    colormapTextureData[i * 4 + 1] = color[1];
+    colormapTextureData[i * 4 + 2] = color[2];
+    colormapTextureData[i * 4 + 3] = 255;
+  }
+  return colormapTextureData;
+}
+
+function compileShader(gl: WebGLRenderingContext, source: string, type: number): WebGLShader | null {
+  const shader = gl.createShader(type);
+  if (!shader) return null;
+
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+    gl.deleteShader(shader);
+    return null;
+  }
+  return shader;
+}
+
+/**
+ * Render spectrogram using WebGL for GPU acceleration
+ */
+function renderSpectrogramWebGL(
+  spectrogram: SpectrogramData,
+  config: SpectrogramRenderConfig
+): ImageBitmap | null {
+  const { width, height, logFreqScale = true } = config;
+  const { magnitudes, timeFrames, freqBins, minDB, maxDB, freqResolution } = spectrogram;
+
+  if (timeFrames === 0 || freqBins === 0) {
+    return null; // Fall back to 2D
+  }
+
+  try {
+    const canvas = new OffscreenCanvas(width, height);
+    const gl = canvas.getContext('webgl2') as WebGL2RenderingContext | null
+      || canvas.getContext('webgl') as WebGLRenderingContext | null;
+
+    if (!gl) return null;
+
+    // Compile shaders
+    const vertexShader = compileShader(gl, VERTEX_SHADER_SOURCE, gl.VERTEX_SHADER);
+    const fragmentShader = compileShader(gl, FRAGMENT_SHADER_SOURCE, gl.FRAGMENT_SHADER);
+    if (!vertexShader || !fragmentShader) return null;
+
+    // Create program
+    const program = gl.createProgram();
+    if (!program) return null;
+
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.error('Program link error:', gl.getProgramInfoLog(program));
+      return null;
+    }
+
+    gl.useProgram(program);
+
+    // Set up geometry (full-screen quad)
+    const positions = new Float32Array([
+      -1, -1,  1, -1,  -1, 1,
+      -1, 1,   1, -1,   1, 1
+    ]);
+    const texCoords = new Float32Array([
+      0, 1,  1, 1,  0, 0,
+      0, 0,  1, 1,  1, 0
+    ]);
+
+    // Position buffer
+    const posBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+    const posLoc = gl.getAttribLocation(program, 'a_position');
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+    // TexCoord buffer
+    const texBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+    const texLoc = gl.getAttribLocation(program, 'a_texCoord');
+    gl.enableVertexAttribArray(texLoc);
+    gl.vertexAttribPointer(texLoc, 2, gl.FLOAT, false, 0, 0);
+
+    // Prepare spectrogram texture data
+    // We need to handle log frequency scale by pre-computing the y-mapping
+    const specData = new Float32Array(width * height);
+
+    // Map spectrogram data to texture with optional log scale
+    const xScale = timeFrames / width;
+
+    for (let y = 0; y < height; y++) {
+      // Map y to frequency bin
+      let freqNorm: number;
+      if (logFreqScale) {
+        // Invert log scale: y=0 is top (high freq), y=height-1 is bottom (low freq)
+        const yNorm = 1 - y / (height - 1);
+        const minFreq = freqResolution;
+        const maxFreq = freqBins * freqResolution;
+        const logMin = Math.log10(minFreq);
+        const logMax = Math.log10(maxFreq);
+        const logFreq = logMin + yNorm * (logMax - logMin);
+        const freq = Math.pow(10, logFreq);
+        freqNorm = freq / (freqBins * freqResolution);
+      } else {
+        freqNorm = 1 - y / (height - 1);
+      }
+
+      const freqBin = Math.min(freqBins - 1, Math.max(0, Math.floor(freqNorm * freqBins)));
+
+      for (let x = 0; x < width; x++) {
+        const timeFrame = Math.min(timeFrames - 1, Math.floor(x * xScale));
+        const db = magnitudes[timeFrame][freqBin];
+        specData[y * width + x] = db;
+      }
+    }
+
+    // Create spectrogram texture
+    const specTexture = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, specTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, width, height, 0,
+      gl.LUMINANCE, gl.FLOAT, specData);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    // Create colormap texture
+    const colormapTexture = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, colormapTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0,
+      gl.RGBA, gl.UNSIGNED_BYTE, getColormapTextureData());
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    // Set uniforms
+    gl.uniform1i(gl.getUniformLocation(program, 'u_spectrogram'), 0);
+    gl.uniform1i(gl.getUniformLocation(program, 'u_colormap'), 1);
+    gl.uniform1f(gl.getUniformLocation(program, 'u_minDB'), minDB);
+    gl.uniform1f(gl.getUniformLocation(program, 'u_maxDB'), maxDB);
+    gl.uniform1f(gl.getUniformLocation(program, 'u_logScale'), logFreqScale ? 1.0 : 0.0);
+
+    // Render
+    gl.viewport(0, 0, width, height);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // Clean up
+    gl.deleteTexture(specTexture);
+    gl.deleteTexture(colormapTexture);
+    gl.deleteBuffer(posBuffer);
+    gl.deleteBuffer(texBuffer);
+    gl.deleteProgram(program);
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
+
+    return canvas.transferToImageBitmap();
+  } catch (e) {
+    console.warn('WebGL spectrogram rendering failed:', e);
+    return null;
+  }
 }
