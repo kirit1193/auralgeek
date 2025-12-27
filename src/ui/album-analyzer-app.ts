@@ -30,17 +30,33 @@ export class AlbumAnalyzerApp extends LitElement {
     spectrograms: { state: true },
   };
 
-  private busy = false;
-  private status = "Ready";
-  private progress: { current: number; total: number; filename: string; stage?: string; stageProgress?: number } | null = null;
-  private album: AlbumAnalysis | null = null;
-  private error: string | null = null;
-  private expandedTracks: Set<number> = new Set();
-  private jsonVisible = false;
-  private viewMode: 'simple' | 'advanced' = 'simple';
-  private spectrograms: Map<number, ImageBitmap> = new Map();
+  // Reactive state properties (use declare to avoid class field issues with Lit 3.x)
+  declare private busy: boolean;
+  declare private status: string;
+  declare private progress: { current: number; total: number; filename: string; stage?: string; stageProgress?: number } | null;
+  declare private album: AlbumAnalysis | null;
+  declare private error: string | null;
+  declare private expandedTracks: Set<number>;
+  declare private jsonVisible: boolean;
+  declare private viewMode: 'simple' | 'advanced';
+  declare private spectrograms: Map<number, ImageBitmap>;
+
+  // Non-reactive private fields
   private worker: Worker | null = null;
   private lightDomInput: HTMLInputElement | null = null;
+
+  constructor() {
+    super();
+    this.busy = false;
+    this.status = "Ready";
+    this.progress = null;
+    this.album = null;
+    this.error = null;
+    this.expandedTracks = new Set();
+    this.jsonVisible = false;
+    this.viewMode = 'simple';
+    this.spectrograms = new Map();
+  }
 
   override connectedCallback(): void {
     super.connectedCallback();
