@@ -34,7 +34,7 @@ function renderSpectrogramInline(bitmap: ImageBitmap): TemplateResult {
 }
 
 // Helper to render spectrogram below header (for advanced mode)
-function renderSpectrogramExpanded(bitmap: ImageBitmap): TemplateResult {
+function renderSpectrogramExpanded(bitmap: ImageBitmap, durationSeconds?: number): TemplateResult {
   const canvasRef: Ref<HTMLCanvasElement> = createRef();
 
   setTimeout(() => {
@@ -49,9 +49,20 @@ function renderSpectrogramExpanded(bitmap: ImageBitmap): TemplateResult {
     }
   }, 0);
 
+  const duration = durationSeconds ?? 0;
+  const midTime = formatTime(duration / 2);
+  const endTime = formatTime(duration);
+
   return html`
     <div class="spectrogram-container">
       <canvas ${ref(canvasRef)} class="spectrogram-canvas"></canvas>
+      ${duration > 0 ? html`
+        <div class="spectrogram-time-scale">
+          <span>0:00</span>
+          <span>${midTime}</span>
+          <span>${endTime}</span>
+        </div>
+      ` : null}
     </div>
   `;
 }
@@ -81,7 +92,7 @@ export function renderTrackCard(
       </div>
 
       <div class="track-content">
-        ${spectrogram ? renderSpectrogramExpanded(spectrogram) : null}
+        ${spectrogram ? renderSpectrogramExpanded(spectrogram, t.parameters.durationSeconds) : null}
         <div class="track-content-inner">
           <!-- LOUDNESS MODULE (EBU R128) -->
           <div class="metric-module primary">

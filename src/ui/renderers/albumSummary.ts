@@ -23,7 +23,7 @@ export function renderReport(album: AlbumAnalysis, ctx: AlbumReportContext): Tem
   return html`
     <div class="panel">
       <div class="summary-row">
-        <div class="score-module" style="--score:${album.overallScore}" title="${album.scoreBreakdown ? `Loudness: ${album.scoreBreakdown.loudness}/10\nDynamics: ${album.scoreBreakdown.dynamics}/10\nTranslation: ${album.scoreBreakdown.translation}/10\nSpectral: ${album.scoreBreakdown.spectral}/10\nStreaming: ${album.scoreBreakdown.streaming}/10` : ''}">
+        <div class="score-module ${album.overallScore >= 8 ? 'excellent' : album.overallScore >= 6 ? 'good' : 'poor'}" style="--score:${album.overallScore}" title="${album.scoreBreakdown ? `Loudness: ${album.scoreBreakdown.loudness}/10\nDynamics: ${album.scoreBreakdown.dynamics}/10\nTranslation: ${album.scoreBreakdown.translation}/10\nSpectral: ${album.scoreBreakdown.spectral}/10\nStreaming: ${album.scoreBreakdown.streaming}/10` : ''}">
           <div class="score-inner">
             <div class="score-number">${album.overallScore.toFixed(1)}</div>
             <div class="score-label">Score</div>

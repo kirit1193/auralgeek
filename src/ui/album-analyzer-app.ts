@@ -8,6 +8,8 @@ import type { AlbumAnalysis } from "../core/types";
 import { decodeToPCM } from "../analysis/decode";
 import { appStyles } from "./styles";
 import { renderReport, type AlbumReportContext } from "./renderers/index.js";
+import { ThemeManager, type Theme } from "./theme.js";
+import "./components/help-modal.js";
 
 type WorkerMsg =
   | { type: "progress"; current: number; total: number; filename: string; stage?: string; stageProgress?: number }
@@ -28,6 +30,8 @@ export class AlbumAnalyzerApp extends LitElement {
     jsonVisible: { state: true },
     viewMode: { state: true },
     spectrograms: { state: true },
+    currentTheme: { state: true },
+    helpModalOpen: { state: true },
   };
 
   // Reactive state properties (use declare to avoid class field issues with Lit 3.x)
@@ -40,6 +44,8 @@ export class AlbumAnalyzerApp extends LitElement {
   declare private jsonVisible: boolean;
   declare private viewMode: 'simple' | 'advanced';
   declare private spectrograms: Map<number, ImageBitmap>;
+  declare private currentTheme: Theme;
+  declare private helpModalOpen: boolean;
 
   // Non-reactive private fields
   private worker: Worker | null = null;
@@ -56,10 +62,26 @@ export class AlbumAnalyzerApp extends LitElement {
     this.jsonVisible = false;
     this.viewMode = 'simple';
     this.spectrograms = new Map();
+    this.currentTheme = 'dark';
+    this.helpModalOpen = false;
   }
+
+  // Store unsubscribe function for theme changes
+  private _themeUnsubscribe: (() => void) | null = null;
 
   override connectedCallback(): void {
     super.connectedCallback();
+
+    // Initialize theme system
+    ThemeManager.init();
+    this.currentTheme = ThemeManager.current;
+    this._applyTheme();
+    this._themeUnsubscribe = ThemeManager.subscribe((theme) => {
+      this.currentTheme = theme;
+      this._applyTheme();
+      this.requestUpdate();
+    });
+
     if (this.worker) return;
 
     if (!document.getElementById('auralgeek-file-input')) {
@@ -137,6 +159,10 @@ export class AlbumAnalyzerApp extends LitElement {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    if (this._themeUnsubscribe) {
+      this._themeUnsubscribe();
+      this._themeUnsubscribe = null;
+    }
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
@@ -145,6 +171,24 @@ export class AlbumAnalyzerApp extends LitElement {
       this.lightDomInput.parentNode.removeChild(this.lightDomInput);
       this.lightDomInput = null;
     }
+  }
+
+  private _applyTheme(): void {
+    this.setAttribute('data-theme', this.currentTheme);
+  }
+
+  private _toggleTheme(): void {
+    ThemeManager.toggle();
+  }
+
+  private _openHelpModal(): void {
+    this.helpModalOpen = true;
+    this.requestUpdate();
+  }
+
+  private _closeHelpModal(): void {
+    this.helpModalOpen = false;
+    this.requestUpdate();
   }
 
   private onPickFiles() {
@@ -348,13 +392,47 @@ export class AlbumAnalyzerApp extends LitElement {
     return html`
       <div class="container">
         <div class="header-module">
+          <div class="header-controls">
+            <button class="header-icon-btn" @click=${this._openHelpModal} title="Metric Reference">?</button>
+            <button class="header-icon-btn" @click=${this._toggleTheme} title="Toggle theme">
+              ${this.currentTheme === 'dark' ? '☀' : '☾'}
+            </button>
+          </div>
           <div class="brand-row">
             <svg class="logo-icon" viewBox="0 0 32 32" width="36" height="36">
-              <circle cx="16" cy="16" r="15" fill="#141414" stroke="#333" stroke-width="1"/>
-              <path d="M 5 20 A 11 11 0 0 1 27 20" fill="none" stroke="#2a2a2a" stroke-width="3" stroke-linecap="round"/>
-              <path d="M 8 18 A 9 9 0 0 1 18 8" fill="none" stroke="#e8973c" stroke-width="2.5" stroke-linecap="round"/>
-              <line x1="16" y1="20" x2="11" y2="10" stroke="#e8973c" stroke-width="2" stroke-linecap="round"/>
-              <circle cx="16" cy="20" r="2" fill="#e8973c"/>
+              <defs>
+                <linearGradient id="headerWaveGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+                  <stop offset="0%" stop-color="#22c55e"/>
+                  <stop offset="60%" stop-color="#22c55e"/>
+                  <stop offset="80%" stop-color="#eab308"/>
+                  <stop offset="100%" stop-color="#ef4444"/>
+                </linearGradient>
+                <linearGradient id="headerBandGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#f0a854"/>
+                  <stop offset="50%" stop-color="#e8973c"/>
+                  <stop offset="100%" stop-color="#c77a2e"/>
+                </linearGradient>
+                <linearGradient id="headerCupGradL" x1="100%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#e8973c"/>
+                  <stop offset="100%" stop-color="#b8722a"/>
+                </linearGradient>
+                <linearGradient id="headerCupGradR" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#e8973c"/>
+                  <stop offset="100%" stop-color="#b8722a"/>
+                </linearGradient>
+              </defs>
+              <path d="M 4 17 C 4 8, 8 3, 16 3 C 24 3, 28 8, 28 17" fill="none" stroke="url(#headerBandGrad)" stroke-width="2.5" stroke-linecap="round"/>
+              <g transform="rotate(8, 4, 19)">
+                <rect x="0.5" y="13" width="7" height="12" rx="1.5" fill="url(#headerCupGradL)" stroke="#c77a2e" stroke-width="0.5"/>
+                <rect x="1.5" y="14.2" width="5" height="9.6" rx="1" fill="#1a1a1a"/>
+              </g>
+              <g transform="rotate(-8, 28, 19)">
+                <rect x="24.5" y="13" width="7" height="12" rx="1.5" fill="url(#headerCupGradR)" stroke="#c77a2e" stroke-width="0.5"/>
+                <rect x="25.5" y="14.2" width="5" height="9.6" rx="1" fill="#1a1a1a"/>
+              </g>
+              <rect x="15" y="13" width="2" height="12" rx="1" fill="url(#headerWaveGrad)"/>
+              <rect x="11.5" y="15" width="2" height="8" rx="1" fill="url(#headerWaveGrad)"/>
+              <rect x="18.5" y="15" width="2" height="8" rx="1" fill="url(#headerWaveGrad)"/>
             </svg>
             <h1 class="logo">Auralgeek</h1>
             <span class="version-badge">v1.0</span>
@@ -415,7 +493,23 @@ export class AlbumAnalyzerApp extends LitElement {
         </div>
 
         ${this.album ? this.renderAlbumReport(this.album) : null}
+
+        <footer class="app-footer">
+          <div class="footer-content">
+            <span class="footer-text">Built with</span>
+            <a href="https://lit.dev" target="_blank" rel="noopener">Lit</a>
+            <span class="footer-sep">·</span>
+            <a href="https://github.com/jiixyj/libebur128" target="_blank" rel="noopener">libebur128</a>
+            <span class="footer-sep">·</span>
+            <a href="https://mediainfo.js.org" target="_blank" rel="noopener">MediaInfo.js</a>
+          </div>
+        </footer>
       </div>
+
+      <help-modal
+        ?open=${this.helpModalOpen}
+        @close=${this._closeHelpModal}
+      ></help-modal>
     `;
   }
 

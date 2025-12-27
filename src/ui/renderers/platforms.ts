@@ -13,8 +13,10 @@ export function renderPlatformCard(platform: PlatformNormalization | null): Temp
                    platform.gainChangeDB < -6 ? "severe" : "negative";
   const hasRisk = platform.riskFlags && platform.riskFlags.length > 0;
 
+  const platformId = platform.platform.toLowerCase().replace(/\s+/g, '');
+
   return html`
-    <div class="platform-card">
+    <div class="platform-card" data-platform="${platformId}">
       <div class="platform-name">${platform.platform}</div>
       <div class="platform-gain ${gainClass}">
         ${platform.gainChangeDB > 0 ? '+' : ''}${platform.gainChangeDB.toFixed(1)} dB
