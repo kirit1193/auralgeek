@@ -6,8 +6,6 @@
 import { css } from 'lit';
 
 export const appStyles = css`
-    @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700&display=swap');
-
     /* === STUDIO CONSOLE THEME === */
     /* Inspired by SSL/Neve mixing consoles, VU meters, and control room aesthetics */
 
@@ -45,7 +43,7 @@ export const appStyles = css`
       --zone-cold: #3b82f6;
 
       display: block;
-      font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: var(--bg-deep);
       color: var(--text-primary);
       min-height: 100vh;
@@ -111,7 +109,7 @@ export const appStyles = css`
     }
 
     .logo {
-      font-family: 'Geist Mono', 'SF Mono', 'Monaco', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 1.1rem;
       font-weight: 600;
       color: var(--accent-amber);
@@ -121,7 +119,7 @@ export const appStyles = css`
     }
 
     .version-badge {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.6rem;
       color: var(--text-dim);
       background: var(--bg-inset);
@@ -174,7 +172,7 @@ export const appStyles = css`
     }
 
     .status-text {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.7rem;
       color: var(--text-secondary);
       text-transform: uppercase;
@@ -190,7 +188,7 @@ export const appStyles = css`
     }
 
     .btn {
-      font-family: 'Manrope', sans-serif;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-weight: 600;
       font-size: 0.8rem;
       padding: 12px 20px;
@@ -270,7 +268,7 @@ export const appStyles = css`
     }
 
     .drop-hint {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.65rem;
       color: var(--text-dim);
       margin-top: 8px;
@@ -313,14 +311,14 @@ export const appStyles = css`
     }
 
     .progress-count {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.9rem;
       color: var(--accent-amber);
       font-weight: 500;
     }
 
     .progress-filename {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.7rem;
       color: var(--text-dim);
       margin-top: 8px;
@@ -331,7 +329,7 @@ export const appStyles = css`
     }
 
     .progress-stage {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.6rem;
       color: var(--text-secondary);
       margin-top: 4px;
@@ -353,7 +351,7 @@ export const appStyles = css`
     }
 
     .progress-bar-label {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.6rem;
       color: var(--text-dim);
       width: 50px;
@@ -377,7 +375,7 @@ export const appStyles = css`
     }
 
     .progress-bar-pct {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.6rem;
       color: var(--text-secondary);
       width: 35px;
@@ -423,7 +421,7 @@ export const appStyles = css`
     }
 
     .panel-title {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.65rem;
       font-weight: 600;
       text-transform: uppercase;
@@ -491,7 +489,7 @@ export const appStyles = css`
     }
 
     .score-number {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.95rem;
       font-weight: 500;
       color: var(--text-primary);
@@ -501,7 +499,7 @@ export const appStyles = css`
     }
 
     .score-label {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.45rem;
       color: var(--text-dim);
       text-transform: uppercase;
@@ -524,7 +522,7 @@ export const appStyles = css`
     .album-meta {
       display: flex;
       gap: 16px;
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.7rem;
       color: var(--text-dim);
       margin-bottom: 10px;
@@ -538,7 +536,7 @@ export const appStyles = css`
       gap: 6px;
       padding: 4px 10px;
       border-radius: 4px;
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.65rem;
       font-weight: 500;
       text-transform: uppercase;
@@ -621,7 +619,7 @@ export const appStyles = css`
     }
 
     .stat-group-title {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.48rem;
       font-weight: 600;
       text-transform: uppercase;
@@ -646,7 +644,7 @@ export const appStyles = css`
     }
 
     .stat-value {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-weight: 500;
       color: var(--text-primary);
       font-size: 0.65rem;
@@ -670,7 +668,7 @@ export const appStyles = css`
       background: var(--bg-deep);
       border: 1px solid var(--border-subtle);
       border-radius: 4px;
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.6rem;
     }
 
@@ -717,7 +715,7 @@ export const appStyles = css`
     }
 
     .track-num {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.65rem;
       color: var(--text-dim);
       width: 22px;
@@ -737,7 +735,7 @@ export const appStyles = css`
     }
 
     .track-meta {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.6rem;
       color: var(--text-dim);
       margin-top: 1px;
@@ -833,7 +831,7 @@ export const appStyles = css`
     }
 
     .module-title {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.48rem;
       font-weight: 600;
       text-transform: uppercase;
@@ -852,7 +850,7 @@ export const appStyles = css`
 
     .module-rating {
       margin-left: auto;
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.5rem;
       font-weight: 500;
       padding: 1px 4px;
@@ -928,7 +926,7 @@ export const appStyles = css`
       align-items: center;
       justify-content: center;
       transition: all 0.15s;
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
     }
 
     .info-btn:hover {
@@ -986,7 +984,7 @@ export const appStyles = css`
     }
 
     .meter-value {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.65rem;
       font-weight: 500;
       color: var(--text-primary);
@@ -1101,7 +1099,7 @@ export const appStyles = css`
     }
 
     .meter-tick {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.5rem;
       color: var(--text-dim);
     }
@@ -1135,7 +1133,7 @@ export const appStyles = css`
     }
 
     .metric-val {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-weight: 500;
       font-size: 0.65rem;
       color: var(--text-primary);
@@ -1216,7 +1214,7 @@ export const appStyles = css`
     }
 
     .platform-name {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.55rem;
       font-weight: 600;
       color: var(--text-dim);
@@ -1226,7 +1224,7 @@ export const appStyles = css`
     }
 
     .platform-gain {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.75rem;
       font-weight: 500;
       margin-bottom: 2px;
@@ -1237,7 +1235,7 @@ export const appStyles = css`
     .platform-gain.severe { color: var(--led-red); }
 
     .platform-tp {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.55rem;
       color: var(--text-dim);
     }
@@ -1262,7 +1260,7 @@ export const appStyles = css`
     }
 
     .music-primary {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.85rem;
       font-weight: 600;
       color: var(--accent-amber);
@@ -1270,7 +1268,7 @@ export const appStyles = css`
     }
 
     .music-confidence {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.6rem;
       color: var(--text-dim);
     }
@@ -1282,7 +1280,7 @@ export const appStyles = css`
     }
 
     .music-badge {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.5rem;
       background: var(--bg-inset);
       border: 1px solid var(--border-subtle);
@@ -1303,7 +1301,7 @@ export const appStyles = css`
     }
 
     .recommendation-title {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.55rem;
       font-weight: 600;
       text-transform: uppercase;
@@ -1332,7 +1330,7 @@ export const appStyles = css`
     }
 
     .section-subtitle {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.45rem;
       font-weight: 600;
       text-transform: uppercase;
@@ -1381,7 +1379,7 @@ export const appStyles = css`
       padding: 14px;
       border-radius: 4px;
       border: 1px solid var(--border-subtle);
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.65rem;
       max-height: 400px;
       overflow: auto;
@@ -1463,7 +1461,7 @@ export const appStyles = css`
     }
 
     .view-toggle-label {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.6rem;
       color: var(--text-dim);
       text-transform: uppercase;
@@ -1479,7 +1477,7 @@ export const appStyles = css`
     }
 
     .view-toggle-btn {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.6rem;
       padding: 6px 12px;
       border: none;
@@ -1524,7 +1522,7 @@ export const appStyles = css`
     }
 
     .simple-metric-value {
-      font-family: 'Geist Mono', monospace;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 0.65rem;
       font-weight: 500;
     }
