@@ -911,6 +911,47 @@ export const appStyles = css`
       color: var(--accent-amber);
     }
 
+    /* Mobile track header optimizations */
+    @media (max-width: 600px) {
+      .track-header {
+        gap: 6px;
+        padding: 8px 10px;
+        overflow: hidden;
+      }
+
+      .track-info {
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: none;
+      }
+
+      .track-name {
+        font-size: 0.75rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .track-meta {
+        font-size: 0.55rem;
+      }
+
+      .track-badges {
+        gap: 4px;
+      }
+
+      .track-badges .badge {
+        padding: 2px 5px;
+        font-size: 0.5rem;
+      }
+
+      .expand-icon {
+        width: 24px;
+        height: 24px;
+        font-size: 0.7rem;
+      }
+    }
+
     .track-content {
       max-height: 0;
       overflow: hidden;
@@ -1723,6 +1764,27 @@ export const appStyles = css`
     .simple-metric-value.danger { color: var(--led-red); }
     .simple-metric-value.info { color: var(--text-primary); }
 
+    /* Simple mode mobile optimizations */
+    @media (max-width: 600px) {
+      .simple-metrics {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+        padding: 4px 6px;
+      }
+
+      .simple-metric {
+        padding: 5px 6px;
+      }
+
+      .simple-metric-label {
+        font-size: 0.55rem;
+      }
+
+      .simple-metric-value {
+        font-size: 0.6rem;
+      }
+    }
+
     /* === INFO BADGE (neutral) === */
     .badge-info {
       background: var(--bg-inset);
@@ -1802,8 +1864,8 @@ export const appStyles = css`
       margin: 0 14px;
     }
 
-    /* Hide spectrogram on very narrow screens */
-    @media (max-width: 480px) {
+    /* Hide spectrogram on mobile screens */
+    @media (max-width: 600px) {
       .spectrogram-inline,
       .spectrogram-placeholder {
         display: none;

@@ -200,6 +200,7 @@ export class HelpModal extends LitElement {
       color: var(--text-primary);
       outline: none;
       transition: border-color 0.15s ease;
+      box-sizing: border-box;
     }
 
     .modal-search-input::placeholder {
@@ -366,13 +367,36 @@ export class HelpModal extends LitElement {
     }
 
     @media (max-width: 600px) {
+      .modal-backdrop {
+        padding: 10px;
+      }
+
       .modal-card {
         max-height: 90vh;
+        border-radius: 8px;
       }
 
       .modal-header {
         flex-wrap: wrap;
-        gap: 12px;
+        gap: 8px;
+        padding: 12px;
+      }
+
+      .modal-title {
+        font-size: 0.75rem;
+      }
+
+      .modal-search {
+        padding: 8px 12px;
+      }
+
+      .modal-search-input {
+        padding: 8px 10px;
+        font-size: 0.8rem;
+      }
+
+      .modal-content {
+        padding: 12px;
       }
 
       .geek-toggle {
