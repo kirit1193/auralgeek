@@ -606,28 +606,28 @@ export const appStyles = css`
     /* === SUMMARY STATS GRID === */
     .summary-stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 10px;
-      margin-top: 16px;
-      padding-top: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 14px;
       border-top: 1px solid var(--border-subtle);
     }
 
     .stat-group {
       background: var(--bg-inset);
       border: 1px solid var(--border-subtle);
-      border-radius: 6px;
-      padding: 10px 12px;
+      border-radius: 5px;
+      padding: 8px 10px;
     }
 
     .stat-group-title {
       font-family: 'Geist Mono', monospace;
-      font-size: 0.5rem;
+      font-size: 0.48rem;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: var(--text-dim);
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       display: flex;
       align-items: center;
       gap: 4px;
@@ -637,8 +637,8 @@ export const appStyles = css`
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 3px 0;
-      font-size: 0.7rem;
+      padding: 2px 0;
+      font-size: 0.65rem;
     }
 
     .stat-label {
@@ -649,6 +649,7 @@ export const appStyles = css`
       font-family: 'Geist Mono', monospace;
       font-weight: 500;
       color: var(--text-primary);
+      font-size: 0.65rem;
     }
 
     .stat-value.good { color: var(--led-green); }
@@ -704,11 +705,11 @@ export const appStyles = css`
     .track-header {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 12px 14px;
+      gap: 10px;
+      padding: 10px 12px;
       cursor: pointer;
       transition: background 0.1s;
-      min-height: 56px; /* Touch friendly */
+      min-height: 52px; /* Touch friendly */
     }
 
     .track-header:hover {
@@ -717,29 +718,29 @@ export const appStyles = css`
 
     .track-num {
       font-family: 'Geist Mono', monospace;
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       color: var(--text-dim);
-      width: 24px;
+      width: 22px;
       flex-shrink: 0;
     }
 
     .track-info {
       flex: 0 0 auto;
-      max-width: 50%;
+      max-width: 45%;
     }
 
     .track-name {
       font-weight: 500;
       color: var(--text-primary);
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       word-break: break-word;
     }
 
     .track-meta {
       font-family: 'Geist Mono', monospace;
-      font-size: 0.65rem;
+      font-size: 0.6rem;
       color: var(--text-dim);
-      margin-top: 2px;
+      margin-top: 1px;
     }
 
     .track-badges {
@@ -785,10 +786,10 @@ export const appStyles = css`
     }
 
     .track-content-inner {
-      padding: 4px 10px 12px;
+      padding: 4px 8px 10px;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 6px;
       overflow: visible;
     }
 
@@ -801,7 +802,7 @@ export const appStyles = css`
     @media (max-width: 600px) {
       .track-content-inner {
         grid-template-columns: 1fr;
-        padding: 4px 8px 10px;
+        padding: 4px 6px 8px;
       }
     }
 
@@ -810,7 +811,7 @@ export const appStyles = css`
       background: var(--bg-inset);
       border: 1px solid var(--border-subtle);
       border-radius: 5px;
-      padding: 10px;
+      padding: 8px;
       overflow: visible; /* Allow tooltips to overflow */
     }
 
@@ -823,36 +824,38 @@ export const appStyles = css`
     /* Tertiary modules are slightly subdued */
     .metric-module.tertiary {
       opacity: 0.9;
+      padding: 6px 8px;
     }
 
     .metric-module.tertiary .module-title {
-      font-size: 0.48rem;
+      font-size: 0.46rem;
+      margin-bottom: 4px;
     }
 
     .module-title {
       font-family: 'Geist Mono', monospace;
-      font-size: 0.5rem;
+      font-size: 0.48rem;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: var(--text-dim);
-      margin: 0 0 6px 0;
+      margin: 0 0 5px 0;
       display: flex;
       align-items: center;
       gap: 4px;
     }
 
     .module-icon {
-      font-size: 0.6rem;
+      font-size: 0.55rem;
       opacity: 0.7;
     }
 
     .module-rating {
       margin-left: auto;
       font-family: 'Geist Mono', monospace;
-      font-size: 0.55rem;
+      font-size: 0.5rem;
       font-weight: 500;
-      padding: 1px 5px;
+      padding: 1px 4px;
       border-radius: 3px;
       background: var(--bg-deep);
     }
@@ -879,7 +882,7 @@ export const appStyles = css`
 
     /* === METERS === */
     .meter-wrap {
-      margin-bottom: 6px;
+      margin-bottom: 5px;
     }
 
     .meter-wrap:last-child {
@@ -890,7 +893,7 @@ export const appStyles = css`
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 4px;
+      margin-bottom: 3px;
     }
 
     .meter-label-wrap {
@@ -900,7 +903,7 @@ export const appStyles = css`
     }
 
     .meter-label {
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       color: var(--text-secondary);
     }
 
@@ -984,14 +987,14 @@ export const appStyles = css`
 
     .meter-value {
       font-family: 'Geist Mono', monospace;
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       font-weight: 500;
       color: var(--text-primary);
     }
 
     /* === METER BAR (VU Style) === */
     .meter-bar {
-      height: 8px;
+      height: 7px;
       background: var(--bg-deep);
       border-radius: 2px;
       position: relative;
@@ -1078,28 +1081,28 @@ export const appStyles = css`
 
     .meter-marker {
       position: absolute;
-      top: -3px;
-      width: 4px;
-      height: 14px;
+      top: -2px;
+      width: 3px;
+      height: 11px;
       background: #fff;
       border-radius: 2px;
       transform: translateX(-50%);
       box-shadow:
         0 0 0 1px rgba(0,0,0,0.5),
-        0 0 8px rgba(255,255,255,1),
-        0 0 12px rgba(255,255,255,0.6);
+        0 0 6px rgba(255,255,255,1),
+        0 0 10px rgba(255,255,255,0.5);
       z-index: 2;
     }
 
     .meter-ticks {
       display: flex;
       justify-content: space-between;
-      margin-top: 4px;
+      margin-top: 3px;
     }
 
     .meter-tick {
       font-family: 'Geist Mono', monospace;
-      font-size: 0.55rem;
+      font-size: 0.5rem;
       color: var(--text-dim);
     }
 
@@ -1107,10 +1110,10 @@ export const appStyles = css`
     .metric-row {
       display: flex;
       flex-direction: column;
-      gap: 2px;
-      padding: 4px 0;
+      gap: 1px;
+      padding: 3px 0;
       border-bottom: 1px solid var(--border-subtle);
-      font-size: 0.7rem;
+      font-size: 0.65rem;
     }
 
     .metric-row:last-child {
@@ -1127,13 +1130,14 @@ export const appStyles = css`
     .metric-label-row {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
       color: var(--text-secondary);
     }
 
     .metric-val {
       font-family: 'Geist Mono', monospace;
       font-weight: 500;
+      font-size: 0.65rem;
       color: var(--text-primary);
     }
 
@@ -1312,7 +1316,7 @@ export const appStyles = css`
     .stacked-modules {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
     }
 
     .stacked-modules .metric-module {
@@ -1323,19 +1327,19 @@ export const appStyles = css`
     .section-divider {
       grid-column: 1 / -1;
       border-top: 1px solid var(--border-subtle);
-      margin: 6px 0;
-      padding-top: 6px;
+      margin: 4px 0;
+      padding-top: 4px;
     }
 
     .section-subtitle {
       font-family: 'Geist Mono', monospace;
-      font-size: 0.5rem;
+      font-size: 0.45rem;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: var(--text-dim);
-      margin: 6px 0 4px 0;
-      padding-top: 4px;
+      margin: 4px 0 2px 0;
+      padding-top: 3px;
       border-top: 1px dashed var(--border-subtle);
     }
 
@@ -1499,29 +1503,29 @@ export const appStyles = css`
     /* === SIMPLE MODE === */
     .simple-metrics {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 8px;
-      padding: 8px 10px;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 6px;
+      padding: 6px 8px;
     }
 
     .simple-metric {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 8px 10px;
+      padding: 6px 8px;
       background: var(--bg-inset);
       border-radius: 4px;
       border: 1px solid var(--border-subtle);
     }
 
     .simple-metric-label {
-      font-size: 0.65rem;
+      font-size: 0.6rem;
       color: var(--text-secondary);
     }
 
     .simple-metric-value {
       font-family: 'Geist Mono', monospace;
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       font-weight: 500;
     }
 
