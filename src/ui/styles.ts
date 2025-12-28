@@ -1932,12 +1932,6 @@ export const appStyles = css`
       transition: all 0.15s ease;
     }
 
-    .header-icon-btn:hover {
-      background: var(--bg-module);
-      border-color: var(--border-panel);
-      color: var(--text-primary);
-    }
-
     .header-icon-btn:focus-visible {
       outline: 2px solid var(--accent-amber);
       outline-offset: 2px;
@@ -2359,20 +2353,34 @@ export const appStyles = css`
       }
     }
 
-    /* === BRAND ROW INTERACTIVE === */
-    .brand-row {
+    /* === BRAND LINK (Logo + Title clickable) === */
+    .brand-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
       cursor: pointer;
       transition: opacity 0.15s ease;
+      border-radius: 6px;
+      padding: 4px 8px;
+      margin: -4px -8px;
     }
 
-    .brand-row:hover {
-      opacity: 0.85;
+    .brand-link:hover {
+      opacity: 0.8;
     }
 
-    .brand-row:focus-visible {
+    .brand-link:hover .logo-icon {
+      filter: drop-shadow(0 0 8px rgba(232, 151, 60, 0.5));
+    }
+
+    .brand-link:focus-visible {
       outline: 2px solid var(--accent-amber);
-      outline-offset: 4px;
-      border-radius: 4px;
+      outline-offset: 2px;
+    }
+
+    .brand-link:active {
+      opacity: 0.7;
     }
 
     /* === BUTTON MICRO-INTERACTIONS === */
@@ -2380,7 +2388,16 @@ export const appStyles = css`
       transform: scale(0.97);
     }
 
+    .header-icon-btn:hover {
+      background: var(--bg-module);
+      border-color: var(--accent-amber-dim);
+      color: var(--accent-amber);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(232, 151, 60, 0.15);
+    }
+
     .header-icon-btn:active {
-      transform: scale(0.92);
+      transform: scale(0.92) translateY(0);
+      box-shadow: none;
     }
 `;

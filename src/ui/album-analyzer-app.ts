@@ -468,43 +468,45 @@ export class AlbumAnalyzerApp extends LitElement {
               ${this.currentTheme === 'dark' ? '☀' : '☾'}
             </button>
           </div>
-          <div class="brand-row" @click=${this._onBrandClick} role="button" tabindex="0" aria-label="Reset analysis" @keydown=${(e: KeyboardEvent) => e.key === 'Enter' && this._onBrandClick()}>
-            <svg class="logo-icon" viewBox="0 0 32 32" width="36" height="36">
-              <defs>
-                <linearGradient id="headerWaveGrad" x1="0%" y1="100%" x2="0%" y2="0%">
-                  <stop offset="0%" stop-color="#22c55e"/>
-                  <stop offset="60%" stop-color="#22c55e"/>
-                  <stop offset="80%" stop-color="#eab308"/>
-                  <stop offset="100%" stop-color="#ef4444"/>
-                </linearGradient>
-                <linearGradient id="headerBandGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stop-color="#f0a854"/>
-                  <stop offset="50%" stop-color="#e8973c"/>
-                  <stop offset="100%" stop-color="#c77a2e"/>
-                </linearGradient>
-                <linearGradient id="headerCupGradL" x1="100%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stop-color="#e8973c"/>
-                  <stop offset="100%" stop-color="#b8722a"/>
-                </linearGradient>
-                <linearGradient id="headerCupGradR" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stop-color="#e8973c"/>
-                  <stop offset="100%" stop-color="#b8722a"/>
-                </linearGradient>
-              </defs>
-              <path d="M 4 17 C 4 8, 8 3, 16 3 C 24 3, 28 8, 28 17" fill="none" stroke="url(#headerBandGrad)" stroke-width="2.5" stroke-linecap="round"/>
-              <g transform="rotate(8, 4, 19)">
-                <rect x="0.5" y="13" width="7" height="12" rx="1.5" fill="url(#headerCupGradL)" stroke="#c77a2e" stroke-width="0.5"/>
-                <rect x="1.5" y="14.2" width="5" height="9.6" rx="1" fill="#1a1a1a"/>
-              </g>
-              <g transform="rotate(-8, 28, 19)">
-                <rect x="24.5" y="13" width="7" height="12" rx="1.5" fill="url(#headerCupGradR)" stroke="#c77a2e" stroke-width="0.5"/>
-                <rect x="25.5" y="14.2" width="5" height="9.6" rx="1" fill="#1a1a1a"/>
-              </g>
-              <rect x="15" y="13" width="2" height="12" rx="1" fill="url(#headerWaveGrad)"/>
-              <rect x="11.5" y="15" width="2" height="8" rx="1" fill="url(#headerWaveGrad)"/>
-              <rect x="18.5" y="15" width="2" height="8" rx="1" fill="url(#headerWaveGrad)"/>
-            </svg>
-            <h1 class="logo">Auralgeek</h1>
+          <div class="brand-row">
+            <a class="brand-link" href="#" @click=${(e: Event) => { e.preventDefault(); this._onBrandClick(); }} aria-label="Reset analysis">
+              <svg class="logo-icon" viewBox="0 0 32 32" width="36" height="36">
+                <defs>
+                  <linearGradient id="headerWaveGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+                    <stop offset="0%" stop-color="#22c55e"/>
+                    <stop offset="60%" stop-color="#22c55e"/>
+                    <stop offset="80%" stop-color="#eab308"/>
+                    <stop offset="100%" stop-color="#ef4444"/>
+                  </linearGradient>
+                  <linearGradient id="headerBandGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color="#f0a854"/>
+                    <stop offset="50%" stop-color="#e8973c"/>
+                    <stop offset="100%" stop-color="#c77a2e"/>
+                  </linearGradient>
+                  <linearGradient id="headerCupGradL" x1="100%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color="#e8973c"/>
+                    <stop offset="100%" stop-color="#b8722a"/>
+                  </linearGradient>
+                  <linearGradient id="headerCupGradR" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#e8973c"/>
+                    <stop offset="100%" stop-color="#b8722a"/>
+                  </linearGradient>
+                </defs>
+                <path d="M 4 17 C 4 8, 8 3, 16 3 C 24 3, 28 8, 28 17" fill="none" stroke="url(#headerBandGrad)" stroke-width="2.5" stroke-linecap="round"/>
+                <g transform="rotate(8, 4, 19)">
+                  <rect x="0.5" y="13" width="7" height="12" rx="1.5" fill="url(#headerCupGradL)" stroke="#c77a2e" stroke-width="0.5"/>
+                  <rect x="1.5" y="14.2" width="5" height="9.6" rx="1" fill="#1a1a1a"/>
+                </g>
+                <g transform="rotate(-8, 28, 19)">
+                  <rect x="24.5" y="13" width="7" height="12" rx="1.5" fill="url(#headerCupGradR)" stroke="#c77a2e" stroke-width="0.5"/>
+                  <rect x="25.5" y="14.2" width="5" height="9.6" rx="1" fill="#1a1a1a"/>
+                </g>
+                <rect x="15" y="13" width="2" height="12" rx="1" fill="url(#headerWaveGrad)"/>
+                <rect x="11.5" y="15" width="2" height="8" rx="1" fill="url(#headerWaveGrad)"/>
+                <rect x="18.5" y="15" width="2" height="8" rx="1" fill="url(#headerWaveGrad)"/>
+              </svg>
+              <h1 class="logo">Auralgeek</h1>
+            </a>
             <span class="version-badge">v1.0</span>
           </div>
           <p class="tagline">Deep audio mastering analysis</p>
