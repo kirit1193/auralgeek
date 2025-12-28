@@ -768,6 +768,99 @@ export function searchMetrics(query: string): MetricDefinition[] {
 }
 
 /**
+ * Score a metric based on how well it matches the query
+ */
+function scoreMetric(metric: MetricDefinition, query: string): number {
+  const q = query.toLowerCase();
+  const name = metric.name.toLowerCase();
+  const categoryName = CATEGORY_INFO[metric.category].title.toLowerCase();
+
+  let score = 0;
+
+  // Exact name match (highest)
+  if (name === q) {
+    score += 100;
+  }
+  // Name starts with query
+  else if (name.startsWith(q)) {
+    score += 80;
+  }
+  // Name contains query
+  else if (name.includes(q)) {
+    score += 60;
+  }
+
+  // Category name match
+  if (categoryName.includes(q)) {
+    score += 40;
+  }
+
+  // Unit or standard match
+  if (metric.unit?.toLowerCase().includes(q)) {
+    score += 50;
+  }
+  if (metric.standard?.toLowerCase().includes(q)) {
+    score += 45;
+  }
+
+  // Description match (lower priority)
+  if (metric.description.toLowerCase().includes(q)) {
+    score += 30;
+  }
+
+  // Good range or action match
+  if (metric.goodRange?.toLowerCase().includes(q)) {
+    score += 25;
+  }
+  if (metric.action?.toLowerCase().includes(q)) {
+    score += 20;
+  }
+
+  return score;
+}
+
+/**
+ * Search metrics with relevance ranking
+ */
+export function searchMetricsRanked(query: string): MetricDefinition[] {
+  const q = query.toLowerCase().trim();
+  if (!q) return METRIC_DEFINITIONS;
+
+  // Score all metrics
+  const scored = METRIC_DEFINITIONS.map(m => ({
+    metric: m,
+    score: scoreMetric(m, q)
+  }));
+
+  // Filter to those with a score > 0 and sort by score descending
+  return scored
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map(s => s.metric);
+}
+
+/**
+ * Get top suggestions for autocomplete (max 6)
+ */
+export function getSuggestions(query: string, limit: number = 6): MetricDefinition[] {
+  const q = query.toLowerCase().trim();
+  if (q.length < 2) return [];
+
+  // Prioritize name matches for suggestions
+  const nameMatches = METRIC_DEFINITIONS
+    .map(m => ({
+      metric: m,
+      score: scoreMetric(m, q)
+    }))
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(s => s.metric);
+
+  return nameMatches;
+}
+
+/**
  * Get all categories in display order
  */
 export function getCategories(): MetricCategory[] {

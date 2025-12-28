@@ -8,7 +8,8 @@ import {
   METRIC_DEFINITIONS,
   CATEGORY_INFO,
   getCategories,
-  searchMetrics,
+  searchMetricsRanked,
+  getSuggestions,
   type MetricDefinition,
   type MetricCategory,
 } from '../data/metric-definitions.js';
@@ -405,6 +406,102 @@ export class HelpModal extends LitElement {
         justify-content: center;
       }
     }
+
+    /* Autocomplete suggestions */
+    .search-wrapper {
+      position: relative;
+    }
+
+    .search-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 6px;
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      font-size: 0.6rem;
+    }
+
+    .result-count {
+      color: var(--text-dim);
+    }
+
+    .result-count strong {
+      color: var(--accent-amber);
+    }
+
+    .search-hint {
+      color: var(--text-dim);
+    }
+
+    .suggestions-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      margin-top: 4px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-panel);
+      border-radius: 6px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      z-index: 100;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .suggestion-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-subtle);
+      transition: background 0.1s ease;
+    }
+
+    .suggestion-item:last-child {
+      border-bottom: none;
+    }
+
+    .suggestion-item:hover,
+    .suggestion-item.selected {
+      background: var(--bg-inset);
+    }
+
+    .suggestion-item.selected {
+      border-left: 2px solid var(--accent-amber);
+      padding-left: 10px;
+    }
+
+    .suggestion-name {
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      font-size: 0.75rem;
+      color: var(--text-primary);
+      flex: 1;
+    }
+
+    .suggestion-highlight {
+      background: rgba(232, 151, 60, 0.3);
+      color: var(--accent-amber);
+      border-radius: 2px;
+      padding: 0 1px;
+    }
+
+    .suggestion-category {
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      font-size: 0.55rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .suggestion-unit {
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      font-size: 0.55rem;
+      color: var(--text-dim);
+      background: var(--bg-deep);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
   `;
 
   static properties = {
@@ -413,6 +510,9 @@ export class HelpModal extends LitElement {
     geekMode: { state: true },
     collapsedCategories: { state: true },
     currentTheme: { state: true },
+    suggestions: { state: true },
+    selectedSuggestionIndex: { state: true },
+    showSuggestions: { state: true },
   };
 
   // Reactive properties (use declare to avoid class field issues with Lit 3.x)
@@ -421,8 +521,12 @@ export class HelpModal extends LitElement {
   declare private geekMode: boolean;
   declare private collapsedCategories: Set<MetricCategory>;
   declare private currentTheme: Theme;
+  declare private suggestions: MetricDefinition[];
+  declare private selectedSuggestionIndex: number;
+  declare private showSuggestions: boolean;
 
   private _themeUnsubscribe: (() => void) | null = null;
+  private _debounceTimeout: number | null = null;
 
   constructor() {
     super();
@@ -430,6 +534,9 @@ export class HelpModal extends LitElement {
     this.searchQuery = '';
     this.collapsedCategories = new Set();
     this.currentTheme = ThemeManager.current;
+    this.suggestions = [];
+    this.selectedSuggestionIndex = -1;
+    this.showSuggestions = false;
     // Load geek mode preference from localStorage
     const saved = localStorage.getItem('auralgeek-geekmode');
     this.geekMode = saved === 'true';
@@ -469,12 +576,20 @@ export class HelpModal extends LitElement {
   updated(changedProperties: Map<string, unknown>): void {
     super.updated(changedProperties);
     // Auto-focus search input when modal opens
-    if (changedProperties.has('open') && this.open) {
-      // Use requestAnimationFrame to ensure DOM is rendered
-      requestAnimationFrame(() => {
-        const searchInput = this.shadowRoot?.querySelector('.modal-search-input') as HTMLInputElement;
-        searchInput?.focus();
-      });
+    if (changedProperties.has('open')) {
+      if (this.open) {
+        // Use requestAnimationFrame to ensure DOM is rendered
+        requestAnimationFrame(() => {
+          const searchInput = this.shadowRoot?.querySelector('.modal-search-input') as HTMLInputElement;
+          searchInput?.focus();
+        });
+      } else {
+        // Reset state when modal closes
+        this.searchQuery = '';
+        this.suggestions = [];
+        this.showSuggestions = false;
+        this.selectedSuggestionIndex = -1;
+      }
     }
   }
 
@@ -495,7 +610,111 @@ export class HelpModal extends LitElement {
   }
 
   private _onSearchInput(e: InputEvent): void {
-    this.searchQuery = (e.target as HTMLInputElement).value;
+    const value = (e.target as HTMLInputElement).value;
+    this.searchQuery = value;
+
+    // Clear existing debounce
+    if (this._debounceTimeout) {
+      clearTimeout(this._debounceTimeout);
+    }
+
+    // Debounce suggestion updates
+    this._debounceTimeout = window.setTimeout(() => {
+      this._updateSuggestions(value);
+    }, 150);
+  }
+
+  private _updateSuggestions(query: string): void {
+    if (query.trim().length >= 2) {
+      this.suggestions = getSuggestions(query, 6);
+      this.showSuggestions = this.suggestions.length > 0;
+      this.selectedSuggestionIndex = -1;
+    } else {
+      this.suggestions = [];
+      this.showSuggestions = false;
+    }
+  }
+
+  private _onSearchKeydown(e: KeyboardEvent): void {
+    if (!this.showSuggestions) {
+      // If no suggestions visible, Escape closes modal
+      if (e.key === 'Escape') {
+        if (this.searchQuery) {
+          // Clear search first
+          this.searchQuery = '';
+          this.suggestions = [];
+          this.showSuggestions = false;
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        this.selectedSuggestionIndex = Math.min(
+          this.selectedSuggestionIndex + 1,
+          this.suggestions.length - 1
+        );
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        this.selectedSuggestionIndex = Math.max(
+          this.selectedSuggestionIndex - 1,
+          -1
+        );
+        break;
+      case 'Enter':
+        if (this.selectedSuggestionIndex >= 0) {
+          e.preventDefault();
+          this._selectSuggestion(this.suggestions[this.selectedSuggestionIndex]);
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        e.stopPropagation();
+        this.showSuggestions = false;
+        this.selectedSuggestionIndex = -1;
+        break;
+    }
+  }
+
+  private _selectSuggestion(metric: MetricDefinition): void {
+    this.searchQuery = metric.name;
+    this.showSuggestions = false;
+    this.selectedSuggestionIndex = -1;
+    this.suggestions = [];
+  }
+
+  private _onSearchBlur(): void {
+    // Delay hiding to allow click on suggestion
+    setTimeout(() => {
+      this.showSuggestions = false;
+    }, 200);
+  }
+
+  private _onSearchFocus(): void {
+    if (this.searchQuery.trim().length >= 2 && this.suggestions.length > 0) {
+      this.showSuggestions = true;
+    }
+  }
+
+  private _highlightMatch(text: string, query: string): unknown {
+    if (!query || query.length < 2) return text;
+
+    const lowerText = text.toLowerCase();
+    const lowerQuery = query.toLowerCase();
+    const index = lowerText.indexOf(lowerQuery);
+
+    if (index === -1) return text;
+
+    const before = text.slice(0, index);
+    const match = text.slice(index, index + query.length);
+    const after = text.slice(index + query.length);
+
+    return html`${before}<span class="suggestion-highlight">${match}</span>${after}`;
   }
 
   private _toggleGeekMode(): void {
@@ -513,8 +732,8 @@ export class HelpModal extends LitElement {
     this.collapsedCategories = newSet;
   }
 
-  private _getFilteredMetrics(): Map<MetricCategory, MetricDefinition[]> {
-    const filtered = searchMetrics(this.searchQuery);
+  private _getFilteredMetrics(): { grouped: Map<MetricCategory, MetricDefinition[]>; total: number } {
+    const filtered = searchMetricsRanked(this.searchQuery);
     const grouped = new Map<MetricCategory, MetricDefinition[]>();
 
     for (const category of getCategories()) {
@@ -524,7 +743,7 @@ export class HelpModal extends LitElement {
       }
     }
 
-    return grouped;
+    return { grouped, total: filtered.length };
   }
 
   private _renderMetricItem(metric: MetricDefinition) {
@@ -583,8 +802,24 @@ export class HelpModal extends LitElement {
     `;
   }
 
+  private _renderSuggestion(metric: MetricDefinition, index: number) {
+    const categoryInfo = CATEGORY_INFO[metric.category];
+    return html`
+      <div
+        class="suggestion-item ${index === this.selectedSuggestionIndex ? 'selected' : ''}"
+        @click=${() => this._selectSuggestion(metric)}
+        @mouseenter=${() => { this.selectedSuggestionIndex = index; }}
+      >
+        <span class="suggestion-name">${this._highlightMatch(metric.name, this.searchQuery)}</span>
+        ${metric.unit ? html`<span class="suggestion-unit">${metric.unit}</span>` : null}
+        <span class="suggestion-category">${categoryInfo.title}</span>
+      </div>
+    `;
+  }
+
   render() {
-    const grouped = this._getFilteredMetrics();
+    const { grouped, total } = this._getFilteredMetrics();
+    const hasQuery = this.searchQuery.trim().length > 0;
 
     return html`
       <div class="modal-backdrop ${this.open ? 'visible' : ''}" @click=${this._onBackdropClick}>
@@ -601,13 +836,30 @@ export class HelpModal extends LitElement {
           </div>
 
           <div class="modal-search">
-            <input
-              type="text"
-              class="modal-search-input"
-              placeholder="Search metrics..."
-              .value=${this.searchQuery}
-              @input=${this._onSearchInput}
-            />
+            <div class="search-wrapper">
+              <input
+                type="text"
+                class="modal-search-input"
+                placeholder="Search metrics..."
+                .value=${this.searchQuery}
+                @input=${this._onSearchInput}
+                @keydown=${this._onSearchKeydown}
+                @blur=${this._onSearchBlur}
+                @focus=${this._onSearchFocus}
+                autocomplete="off"
+              />
+              ${this.showSuggestions && this.suggestions.length > 0 ? html`
+                <div class="suggestions-dropdown">
+                  ${this.suggestions.map((m, i) => this._renderSuggestion(m, i))}
+                </div>
+              ` : null}
+            </div>
+            ${hasQuery ? html`
+              <div class="search-meta">
+                <span class="result-count"><strong>${total}</strong> metric${total !== 1 ? 's' : ''} found</span>
+                <span class="search-hint">↑↓ navigate · Enter select · Esc clear</span>
+              </div>
+            ` : null}
           </div>
 
           <div class="modal-content ${this.geekMode ? 'geek-mode-active' : ''}">
