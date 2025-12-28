@@ -2329,4 +2329,58 @@ export const appStyles = css`
       color: var(--text-dim);
       opacity: 0.5;
     }
+
+    /* === TOAST NOTIFICATIONS === */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-module);
+      color: var(--text-primary);
+      padding: 10px 20px;
+      border-radius: 6px;
+      border: 1px solid var(--border-panel);
+      font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      font-size: 0.75rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      z-index: 10000;
+      animation: toast-in 0.2s ease-out;
+    }
+
+    @keyframes toast-in {
+      from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+    }
+
+    /* === BRAND ROW INTERACTIVE === */
+    .brand-row {
+      cursor: pointer;
+      transition: opacity 0.15s ease;
+    }
+
+    .brand-row:hover {
+      opacity: 0.85;
+    }
+
+    .brand-row:focus-visible {
+      outline: 2px solid var(--accent-amber);
+      outline-offset: 4px;
+      border-radius: 4px;
+    }
+
+    /* === BUTTON MICRO-INTERACTIONS === */
+    .btn:active:not(:disabled) {
+      transform: scale(0.97);
+    }
+
+    .header-icon-btn:active {
+      transform: scale(0.92);
+    }
 `;

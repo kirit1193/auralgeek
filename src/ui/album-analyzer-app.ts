@@ -32,6 +32,7 @@ export class AlbumAnalyzerApp extends LitElement {
     spectrograms: { state: true },
     currentTheme: { state: true },
     helpModalOpen: { state: true },
+    toastMessage: { state: true },
   };
 
   // Reactive state properties (use declare to avoid class field issues with Lit 3.x)
@@ -46,10 +47,12 @@ export class AlbumAnalyzerApp extends LitElement {
   declare private spectrograms: Map<number, ImageBitmap>;
   declare private currentTheme: Theme;
   declare private helpModalOpen: boolean;
+  declare private toastMessage: string | null;
 
   // Non-reactive private fields
   private worker: Worker | null = null;
   private lightDomInput: HTMLInputElement | null = null;
+  private _boundKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
   constructor() {
     super();
@@ -64,6 +67,7 @@ export class AlbumAnalyzerApp extends LitElement {
     this.spectrograms = new Map();
     this.currentTheme = 'dark';
     this.helpModalOpen = false;
+    this.toastMessage = null;
   }
 
   // Store unsubscribe function for theme changes
@@ -81,6 +85,10 @@ export class AlbumAnalyzerApp extends LitElement {
       this._applyTheme();
       this.requestUpdate();
     });
+
+    // Setup keyboard shortcuts
+    this._boundKeyHandler = this._handleKeyboard.bind(this);
+    document.addEventListener('keydown', this._boundKeyHandler);
 
     if (this.worker) return;
 
@@ -163,6 +171,10 @@ export class AlbumAnalyzerApp extends LitElement {
       this._themeUnsubscribe();
       this._themeUnsubscribe = null;
     }
+    if (this._boundKeyHandler) {
+      document.removeEventListener('keydown', this._boundKeyHandler);
+      this._boundKeyHandler = null;
+    }
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
@@ -171,6 +183,62 @@ export class AlbumAnalyzerApp extends LitElement {
       this.lightDomInput.parentNode.removeChild(this.lightDomInput);
       this.lightDomInput = null;
     }
+  }
+
+  private _handleKeyboard(e: KeyboardEvent): void {
+    // Ignore if typing in an input field
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      return;
+    }
+
+    switch (e.key) {
+      case '?':
+        e.preventDefault();
+        this._openHelpModal();
+        break;
+      case 't':
+      case 'T':
+        if (!e.ctrlKey && !e.metaKey) {
+          e.preventDefault();
+          this._toggleTheme();
+        }
+        break;
+      case 'Escape':
+        if (this.helpModalOpen) {
+          this._closeHelpModal();
+        } else if (this.album) {
+          this._resetAnalysis();
+        }
+        break;
+    }
+  }
+
+  private _resetAnalysis(): void {
+    this.album = null;
+    this.error = null;
+    this.expandedTracks = new Set();
+    this.jsonVisible = false;
+    this.spectrograms = new Map();
+    this.status = "Ready";
+    this.requestUpdate();
+  }
+
+  private _onBrandClick(): void {
+    if (this.album || this.error) {
+      this._resetAnalysis();
+    } else {
+      window.location.reload();
+    }
+  }
+
+  private _showToast(message: string): void {
+    this.toastMessage = message;
+    this.requestUpdate();
+    setTimeout(() => {
+      this.toastMessage = null;
+      this.requestUpdate();
+    }, 2000);
   }
 
   private _applyTheme(): void {
@@ -367,11 +435,13 @@ export class AlbumAnalyzerApp extends LitElement {
     a.download = `auralgeek-${this.album.albumName.replace(/[^a-z0-9]/gi, '-').toLowerCase()}-analysis.json`;
     a.click();
     URL.revokeObjectURL(url);
+    this._showToast("Analysis exported");
   }
 
   private copyJSONToClipboard() {
     if (!this.album) return;
     navigator.clipboard.writeText(JSON.stringify(this.album, null, 2));
+    this._showToast("Copied to clipboard");
   }
 
   private toggleTrack(trackNumber: number) {
@@ -393,12 +463,12 @@ export class AlbumAnalyzerApp extends LitElement {
       <div class="container">
         <div class="header-module">
           <div class="header-controls">
-            <button class="header-icon-btn" @click=${this._openHelpModal} title="Metric Reference">?</button>
-            <button class="header-icon-btn" @click=${this._toggleTheme} title="Toggle theme">
+            <button class="header-icon-btn" @click=${this._openHelpModal} title="Metric Reference (Press ?)" aria-label="Open metric reference">?</button>
+            <button class="header-icon-btn" @click=${this._toggleTheme} title="Toggle theme (Press T)" aria-label="Toggle dark/light theme">
               ${this.currentTheme === 'dark' ? '☀' : '☾'}
             </button>
           </div>
-          <div class="brand-row">
+          <div class="brand-row" @click=${this._onBrandClick} role="button" tabindex="0" aria-label="Reset analysis" @keydown=${(e: KeyboardEvent) => e.key === 'Enter' && this._onBrandClick()}>
             <svg class="logo-icon" viewBox="0 0 32 32" width="36" height="36">
               <defs>
                 <linearGradient id="headerWaveGrad" x1="0%" y1="100%" x2="0%" y2="0%">
@@ -510,6 +580,10 @@ export class AlbumAnalyzerApp extends LitElement {
         ?open=${this.helpModalOpen}
         @close=${this._closeHelpModal}
       ></help-modal>
+
+      ${this.toastMessage ? html`
+        <div class="toast">${this.toastMessage}</div>
+      ` : null}
     `;
   }
 

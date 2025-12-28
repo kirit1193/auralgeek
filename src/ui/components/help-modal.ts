@@ -466,6 +466,18 @@ export class HelpModal extends LitElement {
     }
   }
 
+  updated(changedProperties: Map<string, unknown>): void {
+    super.updated(changedProperties);
+    // Auto-focus search input when modal opens
+    if (changedProperties.has('open') && this.open) {
+      // Use requestAnimationFrame to ensure DOM is rendered
+      requestAnimationFrame(() => {
+        const searchInput = this.shadowRoot?.querySelector('.modal-search-input') as HTMLInputElement;
+        searchInput?.focus();
+      });
+    }
+  }
+
   private _handleKeyDown(e: KeyboardEvent): void {
     if (e.key === 'Escape' && this.open) {
       this._close();
@@ -584,7 +596,7 @@ export class HelpModal extends LitElement {
                 <span>Geek Mode</span>
                 <div class="geek-toggle-switch"></div>
               </div>
-              <button class="modal-close-btn" @click=${this._close} title="Close (Esc)">✕</button>
+              <button class="modal-close-btn" @click=${this._close} title="Close (Esc)" aria-label="Close">✕</button>
             </div>
           </div>
 
